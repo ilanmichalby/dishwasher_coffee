@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getDishwashers, startDishwasherProgram } from '@/lib/bosch';
+import { triggerFingerbot } from '@/lib/smartthings';
 import { APPLIANCE_NAMES } from '@/lib/constants';
 
 // Force dynamic execution for this route (no caching)
@@ -62,8 +63,14 @@ export async function GET(request) {
         
         console.log(`Attempting to start schedule ${schedule.id} on ${dishwasherName}...`);
         
-        // Call Bosch API
-        await startDishwasherProgram(targetHaId, schedule.program_key, schedule.options || {});
+        // Call the appropriate API based on the device type/ID
+        if (targetHaId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
+          console.log(`Triggering SmartThings Fingerbot for ${dishwasherName}...`);
+          await triggerFingerbot(targetHaId);
+        } else {
+          console.log(`Starting Bosch program for ${dishwasherName}...`);
+          await startDishwasherProgram(targetHaId, schedule.program_key, schedule.options || {});
+        }
 
         // Mark as completed
         await supabase

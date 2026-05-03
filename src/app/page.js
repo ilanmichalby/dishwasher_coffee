@@ -64,7 +64,18 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         console.log('Dishwashers found:', data.dishwashers);
-        setDishwashers(data.dishwashers || []);
+        
+        // Add the coffee machine manually to the devices list
+        const allAppliances = [
+          ...(data.dishwashers || []),
+          {
+            haId: '9103117a-3163-4aa6-a4fb-b0a50acf832a',
+            name: 'מכונת קפה',
+            type: 'CoffeeMaker'
+          }
+        ];
+        
+        setDishwashers(allAppliances);
       } else {
         const errData = await res.json().catch(() => ({}));
         setError(errData.error || 'נכשל במשיכת מכשירים');
@@ -250,17 +261,22 @@ export default function Home() {
             <div key={d.haId} className="device-card">
               <div className="device-header">
                 <div className="device-info">
-                  <div className="device-icon" style={{ backgroundColor: isHalavi ? '#e1f0ff' : '#ffebeb', color: isHalavi ? '#007aff' : '#ff3b30' }}>
-                    <Droplets size={24} />
+                  <div className="device-icon" style={{ 
+                    backgroundColor: d.type === 'CoffeeMaker' ? '#f2f2f7' : (isHalavi ? '#e1f0ff' : '#ffebeb'), 
+                    color: d.type === 'CoffeeMaker' ? '#8e8e93' : (isHalavi ? '#007aff' : '#ff3b30') 
+                  }}>
+                    {d.type === 'CoffeeMaker' ? <Coffee size={24} /> : <Droplets size={24} />}
                   </div>
                   <div>
                     <div className="device-name">{applianceName}</div>
                     <div className="device-status">מחובר וממתין</div>
                   </div>
                 </div>
-                <div className={`badge ${isHalavi ? 'badge-blue' : 'badge-red'}`}>
-                  {isHalavi ? 'חלבי' : 'בשרי'}
-                </div>
+                {d.type !== 'CoffeeMaker' && (
+                  <div className={`badge ${isHalavi ? 'badge-blue' : 'badge-red'}`}>
+                    {isHalavi ? 'חלבי' : 'בשרי'}
+                  </div>
+                )}
               </div>
 
               {applianceSchedule ? (
@@ -286,20 +302,7 @@ export default function Home() {
         })
       )}
 
-      <div className="section-title">מכשירים נוספים</div>
-      <div className="device-card" style={{ opacity: 0.6 }}>
-        <div className="device-header">
-          <div className="device-info">
-            <div className="device-icon" style={{ backgroundColor: '#f2f2f7', color: '#8e8e93' }}>
-              <Coffee size={24} />
-            </div>
-            <div>
-              <div className="device-name">מכונת קפה</div>
-              <div className="device-status">בקרוב...</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Additional devices section removed as coffee machine is now in the main list */}
 
       {/* Recent Activity */}
       <div className="section-title">הפעלות אחרונות</div>
