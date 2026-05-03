@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getDishwashers, startDishwasherProgram } from '@/lib/bosch';
+import { APPLIANCE_NAMES } from '@/lib/constants';
 
 // Force dynamic execution for this route (no caching)
 export const dynamic = 'force-dynamic';
@@ -55,10 +56,11 @@ export async function GET(request) {
     // 3. Process each schedule
     for (const schedule of pendingSchedules) {
       try {
-        console.log(`Attempting to start schedule ${schedule.id}...`);
-        
         // Find the specific dishwasher or fallback to the first one
         const targetHaId = schedule.appliance_id || dishwashers[0].haId;
+        const dishwasherName = APPLIANCE_NAMES[targetHaId] || targetHaId;
+        
+        console.log(`Attempting to start schedule ${schedule.id} on ${dishwasherName}...`);
         
         // Call Bosch API
         await startDishwasherProgram(targetHaId, schedule.program_key, schedule.options || {});

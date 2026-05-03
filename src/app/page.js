@@ -2,7 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Calendar, Clock, Play, PowerOff, CheckCircle, AlertCircle, RefreshCw, Trash2, Edit2, PlusCircle, Save } from 'lucide-react';
+import { APPLIANCE_NAMES } from '@/lib/constants';
+import { 
+  Calendar, 
+  Clock, 
+  Play, 
+  Power, 
+  CheckCircle, 
+  AlertCircle, 
+  RefreshCw, 
+  Trash2, 
+  Settings, 
+  Plus, 
+  Coffee, 
+  ChevronRight,
+  X,
+  Droplets,
+  Star,
+  Printer
+} from 'lucide-react';
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -10,25 +28,21 @@ export default function Home() {
   const [schedules, setSchedules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [dishwashers, setDishwashers] = useState([]);
-  const [isScheduling, setIsScheduling] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  
+  // Selection state
+  const [selectedAppliance, setSelectedAppliance] = useState(null);
+  
   // Form state
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [program, setProgram] = useState('Dishcare.Dishwasher.Program.Eco50');
-  const [applianceId, setApplianceId] = useState('');
-  
-  // Template Form State
-  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
-  const [templateName, setTemplateName] = useState('');
 
   useEffect(() => {
     checkAuth();
     fetchData();
     fetchDishwashers();
     
-    // Set default date to today, default time to 22:00
     const today = new Date();
     setDate(today.toISOString().split('T')[0]);
     setTime('22:00');
@@ -46,9 +60,6 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setDishwashers(data.dishwashers || []);
-        if (data.dishwashers && data.dishwashers.length > 0) {
-          setApplianceId(data.dishwashers[0].haId);
-        }
       }
     } catch (error) {
       console.error('Failed to fetch dishwashers', error);
@@ -59,8 +70,7 @@ export default function Home() {
     const { data: scheduleData } = await supabase
       .from('schedules')
       .select('*')
-      .order('scheduled_time', { ascending: true })
-      .limit(10);
+      .order('scheduled_time', { ascending: true });
       
     if (scheduleData) setSchedules(scheduleData);
 
@@ -68,369 +78,311 @@ export default function Home() {
     if (templateData) setTemplates(templateData);
   };
 
-  const handleSchedule = async (e) => {
-    if (e) e.preventDefault();
-    setIsScheduling(true);
+  const openScheduling = (appliance) => {
+    setSelectedAppliance(appliance);
+    setIsSheetOpen(true);
+  };
 
+  const handleSchedule = async () => {
     try {
       const scheduledDateTime = new Date(`${date}T${time}:00`);
       
-      if (editingId) {
-        const { error } = await supabase.from('schedules').update({
-          scheduled_time: scheduledDateTime.toISOString(),
-          program_key: program,
-          appliance_id: applianceId
-        }).eq('id', editingId);
-
-        if (error) throw error;
-        alert('התזמון עודכן בהצלחה!');
-        setEditingId(null);
-      } else {
-        const { error } = await supabase.from('schedules').insert([{
-          scheduled_time: scheduledDateTime.toISOString(),
-          program_key: program,
-          appliance_id: applianceId,
-          status: 'pending'
-        }]);
-
-        if (error) throw error;
-        alert('המדיח תוכנת בהצלחה!');
-      }
-      
-      fetchData();
-    } catch (error) {
-      alert('שגיאה בתזמון: ' + error.message);
-    } finally {
-      setIsScheduling(false);
-    }
-  };
-
-  const handleCreateTemplate = async (e) => {
-    if (e) e.preventDefault();
-    setIsScheduling(true);
-    
-    try {
-      const { error } = await supabase.from('templates').insert([{
-        name: templateName,
-        program_key: program,
-        default_time_of_day: time,
-        appliance_id: applianceId
-      }]);
-
-      if (error) throw error;
-      alert('התבנית נשמרה בהצלחה!');
-      setIsCreatingTemplate(false);
-      setTemplateName('');
-      fetchData();
-    } catch (error) {
-      alert('שגיאה בשמירת התבנית: ' + error.message);
-    } finally {
-      setIsScheduling(false);
-    }
-  };
-
-  const scheduleTemplate = async (template) => {
-    setIsScheduling(true);
-    try {
-      const today = new Date();
-      const dateStr = today.toISOString().split('T')[0];
-      const scheduledDateTime = new Date(`${dateStr}T${template.default_time_of_day}:00`);
-      
-      if (scheduledDateTime < new Date()) {
-        scheduledDateTime.setDate(scheduledDateTime.getDate() + 1);
-      }
-
       const { error } = await supabase.from('schedules').insert([{
         scheduled_time: scheduledDateTime.toISOString(),
-        program_key: template.program_key,
-        appliance_id: template.appliance_id || applianceId,
+        program_key: program,
+        appliance_id: selectedAppliance.haId,
         status: 'pending'
       }]);
 
       if (error) throw error;
+      
+      setIsSheetOpen(false);
       fetchData();
-      alert(`תבנית '${template.name}' תוכנתה ל-${scheduledDateTime.toLocaleString('he-IL')}`);
     } catch (error) {
-      alert('שגיאה בהפעלת תבנית: ' + error.message);
-    } finally {
-      setIsScheduling(false);
+      alert('שגיאה בתזמון: ' + error.message);
     }
   };
 
-  const handleEdit = (schedule) => {
-    setEditingId(schedule.id);
-    const d = new Date(schedule.scheduled_time);
-    const tzOffset = d.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString();
-    
-    setDate(localISOTime.split('T')[0]);
-    setTime(localISOTime.split('T')[1].substring(0, 5));
-    setProgram(schedule.program_key);
-    if (schedule.appliance_id) setApplianceId(schedule.appliance_id);
-    
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleDelete = async (id) => {
-    if (!confirm('האם אתה בטוח שברצונך למחוק תזמון זה?')) return;
-    try {
-      const { error } = await supabase.from('schedules').delete().eq('id', id);
-      if (error) throw error;
-      fetchData();
-    } catch (error) {
-      alert('שגיאה במחיקה: ' + error.message);
+  const applyTemplate = (template) => {
+    setProgram(template.program_key);
+    if (template.default_time_of_day) {
+      setTime(template.default_time_of_day);
     }
   };
 
-  const handleDeleteTemplate = async (id, e) => {
-    e.stopPropagation();
-    if (!confirm('האם אתה בטוח שברצונך למחוק תבנית זו?')) return;
-    try {
-      const { error } = await supabase.from('templates').delete().eq('id', id);
-      if (error) throw error;
-      fetchData();
-    } catch (error) {
-      alert('שגיאה במחיקת התבנית: ' + error.message);
-    }
+  const deleteSchedule = async (id) => {
+    const { error } = await supabase.from('schedules').delete().eq('id', id);
+    if (!error) fetchData();
   };
 
-  const formatDateTime = (isoString) => {
+  const formatDateShort = (isoString) => {
     const d = new Date(isoString);
-    return d.toLocaleString('he-IL', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+
+    if (d.toDateString() === today.toDateString()) return 'היום';
+    if (d.toDateString() === tomorrow.toDateString()) return 'מחר';
+    
+    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
   };
 
   const formatProgramName = (key) => {
-    return key.split('.').pop().replace(/([A-Z])/g, ' $1').trim();
+    if (key.includes('Eco50')) return 'Eco 50°C';
+    if (key.includes('Auto2')) return 'Auto 45-65°C';
+    if (key.includes('Intensiv70')) return 'Intensive 70°C';
+    if (key.includes('Quick45')) return 'Quick 45°C';
+    if (key.includes('Kurz60')) return 'Quick 60°C';
+    return key.split('.').pop();
   };
-  
-  const getApplianceName = (haId) => {
-    const appliance = dishwashers.find(d => d.haId === haId);
-    return appliance ? appliance.name : 'מדיח לא ידוע';
+
+  const handlePrint = () => {
+    window.print();
   };
 
   if (isLoading) {
-    return <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <RefreshCw className="pulse" size={48} color="var(--primary)" />
-    </div>;
+    return (
+      <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <RefreshCw className="pulse" size={32} color="var(--primary)" />
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
     return (
-      <main className="container">
-        <div className="login-container">
-          <h1>מנהל הפעלות למדיח בוש</h1>
-          <p>אנא התחבר לחשבון ה-Home Connect שלך כדי להמשיך.</p>
-          <a href="/api/auth/bosch/login" className="btn btn-primary">
-            <PowerOff size={20} style={{ marginLeft: '8px' }} />
-            התחבר לחשבון
+      <main className="container" dir="rtl">
+        <header>
+          <h1>הבית החכם</h1>
+        </header>
+        <div className="device-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+          <div className="device-icon" style={{ margin: '0 auto 1.5rem auto', width: '64px', height: '64px' }}>
+            <Power size={32} />
+          </div>
+          <h2 style={{ marginBottom: '1rem' }}>צריך להתחבר</h2>
+          <p style={{ color: 'var(--secondary)', marginBottom: '2rem' }}>אנא התחבר לחשבון ה-Home Connect שלך כדי לשלוט במכשירים.</p>
+          <a href="/api/auth/bosch/login" className="btn-primary" style={{ textDecoration: 'none', display: 'block' }}>
+            התחבר עכשיו
           </a>
         </div>
       </main>
     );
   }
 
+  const pendingSchedules = schedules.filter(s => s.status === 'pending');
+
   return (
     <main className="container" dir="rtl">
-      <h1>מנהל מדיחים</h1>
-
-      <section className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ margin: 0, border: 'none' }}>תבניות מהירות</h2>
+      {/* Printable Section */}
+      <div className="print-only">
+        <div className="print-title">לוח זמנים להפעלת מכשירים - שבת קודש</div>
+        <table className="print-table">
+          <thead>
+            <tr>
+              <th>מכשיר</th>
+              <th>יום/תאריך</th>
+              <th>שעה</th>
+              <th>תוכנית</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingSchedules.map(s => (
+              <tr key={s.id}>
+                <td>{APPLIANCE_NAMES[s.appliance_id] || 'מדיח'}</td>
+                <td>{new Date(s.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' })}</td>
+                <td>{new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</td>
+                <td>{formatProgramName(s.program_key)}</td>
+              </tr>
+            ))}
+            {pendingSchedules.length === 0 && (
+              <tr>
+                <td colSpan="4" style={{ textAlign: 'center' }}>אין הפעלות מתוזמנות</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div style={{ marginTop: '30px', fontSize: '12pt', color: '#666', textAlign: 'center' }}>
+          הודפס ב- {new Date().toLocaleString('he-IL')}
         </div>
-        
-        {templates.length === 0 ? (
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>לא נמצאו תבניות שמורות.</p>
-        ) : (
-          <div className="grid-2" style={{ marginBottom: '1.5rem' }}>
-            {templates.map(t => (
-              <div key={t.id} style={{ position: 'relative' }}>
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={() => scheduleTemplate(t)}
-                  disabled={isScheduling}
-                  style={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'flex-start', padding: '1rem' }}
-                >
-                  <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                    <Play size={14} style={{ marginLeft: '4px', display: 'inline', verticalAlign: 'middle' }} />
-                    {t.name}
+      </div>
+
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ margin: 0 }}>הבית החכם</h1>
+        <button onClick={handlePrint} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '12px', padding: '10px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <Printer size={20} />
+          הדפס לשבת
+        </button>
+      </header>
+
+      <div className="section-title">מדיחים</div>
+      
+      {dishwashers.length === 0 ? (
+        <div className="device-card" style={{ alignItems: 'center', color: 'var(--secondary)' }}>
+          <RefreshCw className="pulse" size={24} />
+          <p>מחפש מכשירים...</p>
+        </div>
+      ) : (
+        dishwashers.map(d => {
+          const isHalavi = APPLIANCE_NAMES[d.haId]?.includes('חלבי');
+          const applianceName = APPLIANCE_NAMES[d.haId] || d.name;
+          const applianceSchedule = pendingSchedules.find(s => s.appliance_id === d.haId);
+
+          return (
+            <div key={d.haId} className="device-card">
+              <div className="device-header">
+                <div className="device-info">
+                  <div className="device-icon" style={{ backgroundColor: isHalavi ? '#e1f0ff' : '#ffebeb', color: isHalavi ? '#007aff' : '#ff3b30' }}>
+                    <Droplets size={24} />
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{t.default_time_of_day} | {getApplianceName(t.appliance_id || applianceId)}</div>
-                </button>
-                <button 
-                  onClick={(e) => handleDeleteTemplate(t.id, e)} 
-                  style={{ position: 'absolute', top: '8px', left: '8px', background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer' }}
-                >
-                  <Trash2 size={16}/>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>{editingId ? 'עריכת תזמון' : 'תזמון ידני'}</h2>
-        
-        {/* Toggle Mode */}
-        {!editingId && (
-          <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem' }}>
-            <button 
-              className={`btn ${!isCreatingTemplate ? 'btn-primary' : 'btn-secondary'}`} 
-              onClick={() => setIsCreatingTemplate(false)}
-              style={{ flex: 1, padding: '0.5rem' }}
-            >
-              הפעל פעם אחת
-            </button>
-            <button 
-              className={`btn ${isCreatingTemplate ? 'btn-primary' : 'btn-secondary'}`} 
-              onClick={() => setIsCreatingTemplate(true)}
-              style={{ flex: 1, padding: '0.5rem' }}
-            >
-              שמור כתבנית קבועה
-            </button>
-          </div>
-        )}
-
-        <form onSubmit={isCreatingTemplate ? handleCreateTemplate : handleSchedule}>
-          
-          {isCreatingTemplate && (
-            <div className="form-group">
-              <label>שם התבנית (לדוגמה: תוכנית לילה בשרי)</label>
-              <input 
-                type="text" 
-                className="form-control" 
-                value={templateName} 
-                onChange={e => setTemplateName(e.target.value)} 
-                required 
-                placeholder="הכנס שם..."
-              />
-            </div>
-          )}
-
-          <div className="grid-2">
-            {!isCreatingTemplate && (
-              <div className="form-group">
-                <label><Calendar size={14} style={{ display: 'inline', marginLeft: '4px', verticalAlign: 'middle' }}/> תאריך</label>
-                <input 
-                  type="date" 
-                  className="form-control" 
-                  value={date} 
-                  onChange={e => setDate(e.target.value)} 
-                  required 
-                />
-              </div>
-            )}
-            <div className="form-group">
-              <label><Clock size={14} style={{ display: 'inline', marginLeft: '4px', verticalAlign: 'middle' }}/> שעת הפעלה</label>
-              <input 
-                type="time" 
-                className="form-control" 
-                value={time} 
-                onChange={e => setTime(e.target.value)} 
-                required 
-              />
-            </div>
-          </div>
-
-          <div className="grid-2">
-            <div className="form-group">
-              <label>בחר מדיח</label>
-              <select 
-                className="form-control" 
-                value={applianceId} 
-                onChange={e => setApplianceId(e.target.value)}
-                required
-              >
-                {dishwashers.length === 0 && <option value="">טוען מדיחים...</option>}
-                {dishwashers.map(d => (
-                  <option key={d.haId} value={d.haId}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>תוכנית הפעלה</label>
-              <select 
-                className="form-control" 
-                value={program} 
-                onChange={e => setProgram(e.target.value)}
-              >
-                <option value="Dishcare.Dishwasher.Program.Eco50">חסכוני 50°C</option>
-                <option value="Dishcare.Dishwasher.Program.Auto2">אוטומטי 45-65°C</option>
-                <option value="Dishcare.Dishwasher.Program.Intensiv70">אינטנסיבי 70°C</option>
-                <option value="Dishcare.Dishwasher.Program.Quick45">מהיר 45°C</option>
-                <option value="Dishcare.Dishwasher.Program.Kurz60">מהיר 60°C</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-            <button type="submit" className="btn btn-primary" disabled={isScheduling}>
-              {isScheduling ? 'שומר...' : (
-                isCreatingTemplate ? 'שמור תבנית' : (editingId ? 'עדכן תזמון' : 'הפעל תזמון')
-              )}
-            </button>
-            
-            {editingId && (
-              <button type="button" className="btn btn-secondary" onClick={() => {
-                setEditingId(null);
-                const today = new Date();
-                setDate(today.toISOString().split('T')[0]);
-                setTime('22:00');
-              }}>
-                ביטול עריכה
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
-
-      <section className="card">
-        <h2>הפעלות קרובות וקודמות</h2>
-        {schedules.length === 0 ? (
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>לא נמצאו תזמונים.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {schedules.map(schedule => (
-              <div key={schedule.id} className="schedule-item">
-                <div className="schedule-details">
-                  <span className="schedule-time">{formatDateTime(schedule.scheduled_time)}</span>
-                  <span className="schedule-program" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <strong>{getApplianceName(schedule.appliance_id)}</strong> • {formatProgramName(schedule.program_key)}
-                  </span>
-                  {schedule.last_error && (
-                    <span style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '4px' }}>
-                      שגיאה: {schedule.last_error} (ניסיונות: {schedule.retry_count})
-                    </span>
-                  )}
+                  <div>
+                    <div className="device-name">{applianceName}</div>
+                    <div className="device-status">מחובר וממתין</div>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                  {schedule.status === 'pending' && <span className="badge badge-pending"><Clock size={12} style={{marginLeft:'4px'}}/> ממתין</span>}
-                  {schedule.status === 'completed' && <span className="badge badge-completed"><CheckCircle size={12} style={{marginLeft:'4px'}}/> הושלם</span>}
-                  {schedule.status === 'failed' && <span className="badge badge-failed"><AlertCircle size={12} style={{marginLeft:'4px'}}/> נכשל</span>}
-                  
-                  {schedule.status === 'pending' && (
-                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
-                      <button onClick={() => handleEdit(schedule)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Edit2 size={16}/> 
-                      </button>
-                      <button onClick={() => handleDelete(schedule.id)} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Trash2 size={16}/> 
-                      </button>
+                <div className={`badge ${isHalavi ? 'badge-blue' : 'badge-red'}`}>
+                  {isHalavi ? 'חלבי' : 'בשרי'}
+                </div>
+              </div>
+
+              {applianceSchedule ? (
+                <div className="schedule-row" style={{ backgroundColor: isHalavi ? 'rgba(0,122,255,0.05)' : 'rgba(255,59,48,0.05)' }}>
+                  <div className="schedule-time-box">
+                    <div className="schedule-label">הפעלה מתוזמנת ל{formatDateShort(applianceSchedule.scheduled_time)}</div>
+                    <div className="schedule-time-value" style={{ color: isHalavi ? 'var(--primary)' : 'var(--error)' }}>
+                      {new Date(applianceSchedule.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                  )}
+                  </div>
+                  <button onClick={() => deleteSchedule(applianceSchedule.id)} style={{ background: 'none', border: 'none', color: 'var(--error)' }}>
+                    <Trash2 size={20} />
+                  </button>
                 </div>
-              </div>
-            ))}
+              ) : (
+                <button className="btn-add" onClick={() => openScheduling(d)}>
+                  <Plus size={18} />
+                  תזמן הפעלה חדשה
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      <div className="section-title">מכשירים נוספים</div>
+      <div className="device-card" style={{ opacity: 0.6 }}>
+        <div className="device-header">
+          <div className="device-info">
+            <div className="device-icon" style={{ backgroundColor: '#f2f2f7', color: '#8e8e93' }}>
+              <Coffee size={24} />
+            </div>
+            <div>
+              <div className="device-name">מכונת קפה</div>
+              <div className="device-status">בקרוב...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="section-title">הפעלות אחרונות</div>
+      <div className="device-card" style={{ padding: '0.5rem 0' }}>
+        {schedules.filter(s => s.status !== 'pending').slice(0, 5).map(s => (
+          <div key={s.id} className="schedule-item" style={{ borderBottom: '1px solid var(--border)', padding: '1rem 1.25rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontWeight: '600' }}>{APPLIANCE_NAMES[s.appliance_id] || 'מדיח'}</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>
+                {new Date(s.scheduled_time).toLocaleDateString('he-IL')} • {new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <div className={`badge ${s.status === 'completed' ? 'badge-green' : 'badge-red'}`}>
+              {s.status === 'completed' ? 'בוצע' : 'נכשל'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bottom Sheet for Scheduling */}
+      <div className={`overlay ${isSheetOpen ? 'open' : ''}`} onClick={() => setIsSheetOpen(false)} />
+      <div className={`bottom-sheet ${isSheetOpen ? 'open' : ''}`} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: '700' }}>תזמון {selectedAppliance && (APPLIANCE_NAMES[selectedAppliance.haId] || selectedAppliance.name)}</h2>
+          <button onClick={() => setIsSheetOpen(false)} style={{ background: '#f2f2f7', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label><Calendar size={14} style={{ verticalAlign: 'middle', marginLeft: '4px' }} /> תאריך</label>
+            <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label><Clock size={14} style={{ verticalAlign: 'middle', marginLeft: '4px' }} /> שעה</label>
+            <input type="time" className="form-control" value={time} onChange={e => setTime(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+          <label>תוכנית הפעלה</label>
+          <select className="form-control" value={program} onChange={e => setProgram(e.target.value)}>
+            <option value="Dishcare.Dishwasher.Program.Eco50">Eco 50°C</option>
+            <option value="Dishcare.Dishwasher.Program.Auto2">Auto 45-65°C</option>
+            <option value="Dishcare.Dishwasher.Program.Intensiv70">Intensive 70°C</option>
+            <option value="Dishcare.Dishwasher.Program.Quick45">Quick 45°C</option>
+            <option value="Dishcare.Dishwasher.Program.Kurz60">Quick 60°C</option>
+          </select>
+        </div>
+
+        {templates.length > 0 && (
+          <div style={{ marginBottom: '2rem' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--secondary)', marginBottom: '0.75rem', display: 'block' }}>תבניות קבועות</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {templates.map(t => (
+                <button key={t.id} className="preset-card" onClick={() => applyTemplate(t)} style={{ display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'right' }}>
+                  <Star size={14} color="var(--warning)" fill="var(--warning)" />
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{t.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>{t.default_time_of_day}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
-      </section>
+
+        <button className="btn-primary" onClick={handleSchedule} style={{ marginTop: '0.5rem', height: '56px', fontSize: '1.1rem' }}>
+          אשר תזמון הפעלה
+        </button>
+      </div>
+
+      <style jsx>{`
+        .form-control {
+          width: 100%;
+          padding: 0.75rem;
+          border-radius: 12px;
+          border: 1px solid var(--border);
+          background: #f2f2f7;
+          font-family: inherit;
+          font-size: 1rem;
+        }
+        .form-group label {
+          display: block;
+          font-size: 0.85rem;
+          color: var(--secondary);
+          margin-bottom: 0.5rem;
+          margin-right: 0.25rem;
+        }
+        .preset-card {
+          background: #f2f2f7;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 10px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .preset-card:active {
+          background: var(--primary-soft);
+          border-color: var(--primary);
+        }
+      `}</style>
     </main>
   );
 }

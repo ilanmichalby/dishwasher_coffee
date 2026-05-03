@@ -73,7 +73,7 @@ export async function getDishwashers() {
   const response = await fetch(`${API_URL}/api/homeappliances`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.bsh.api.v1+json'
+      'Accept': 'application/vnd.bsh.sdk.v1+json'
     }
   });
 
@@ -106,8 +106,8 @@ export async function startDishwasherProgram(haId, programKey, options = {}) {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/vnd.bsh.api.v1+json',
-      'Accept': 'application/vnd.bsh.api.v1+json'
+      'Content-Type': 'application/vnd.bsh.sdk.v1+json',
+      'Accept': 'application/vnd.bsh.sdk.v1+json'
     },
     body: JSON.stringify(payload)
   });
