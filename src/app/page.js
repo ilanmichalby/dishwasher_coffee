@@ -28,6 +28,7 @@ export default function Home() {
   const [schedules, setSchedules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [dishwashers, setDishwashers] = useState([]);
+  const [error, setError] = useState(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   
   // Selection state
@@ -56,13 +57,21 @@ export default function Home() {
 
   const fetchDishwashers = async () => {
     try {
+      setError(null);
+      console.log('Fetching dishwashers...');
       const res = await fetch('/api/dishwashers');
+      console.log('API Response status:', res.status);
       if (res.ok) {
         const data = await res.json();
+        console.log('Dishwashers found:', data.dishwashers);
         setDishwashers(data.dishwashers || []);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error || 'נכשל במשיכת מכשירים');
       }
     } catch (error) {
       console.error('Failed to fetch dishwashers', error);
+      setError('שגיאת תקשורת בחיפוש מכשירים');
     }
   };
 
@@ -215,10 +224,21 @@ export default function Home() {
 
       <div className="section-title">מדיחים</div>
       
-      {dishwashers.length === 0 ? (
+      {error ? (
+        <div className="device-card" style={{ alignItems: 'center', color: 'var(--error)', backgroundColor: '#fff5f5' }}>
+          <AlertCircle size={24} />
+          <p>{error}</p>
+          <button onClick={fetchDishwashers} className="btn-add" style={{ marginTop: '10px' }}>
+            נסה שוב
+          </button>
+        </div>
+      ) : dishwashers.length === 0 ? (
         <div className="device-card" style={{ alignItems: 'center', color: 'var(--secondary)' }}>
           <RefreshCw className="pulse" size={24} />
           <p>מחפש מכשירים...</p>
+          <button onClick={fetchDishwashers} style={{ marginTop: '10px', background: 'none', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
+            נסה לרענן ידנית
+          </button>
         </div>
       ) : (
         dishwashers.map(d => {

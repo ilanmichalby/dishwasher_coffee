@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const dishwashers = await getDishwashers();
+    console.log(`API: Found ${dishwashers.length} dishwashers`);
     return NextResponse.json({ dishwashers });
   } catch (error) {
     console.error('Failed to fetch dishwashers:', error);
