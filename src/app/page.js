@@ -105,16 +105,27 @@ export default function Home() {
 
   const handleSchedule = async () => {
     try {
-      const scheduledDateTime = new Date(`${date}T${time}:00`);
+      let scheduledDateTime = new Date(`${date}T${time}:00`);
       
-      const { error } = await supabase.from('schedules').insert([{
-        scheduled_time: scheduledDateTime.toISOString(),
-        program_key: program,
-        appliance_id: selectedAppliance.haId,
-        status: 'pending'
-      }]);
+      // If it's the coffee machine, subtract 2 minutes for heating lead time
+      if (selectedAppliance.haId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
+        scheduledDateTime = new Date(scheduledDateTime.getTime() - 2 * 60 * 1000);
+      }
+      
+      const response = await fetch('/api/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_time: scheduledDateTime.toISOString(),
+          program_key: program,
+          appliance_id: selectedAppliance.haId
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'נכשל בתזמון');
+      }
       
       setIsSheetOpen(false);
       fetchData();
