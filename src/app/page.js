@@ -17,6 +17,7 @@ import {
   Coffee, 
   ChevronRight,
   X,
+  Droplets,
   Star,
   Printer,
   Zap,
