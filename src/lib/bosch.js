@@ -119,3 +119,59 @@ export async function startDishwasherProgram(haId, programKey, options = {}) {
 
   return true;
 }
+
+/**
+ * Sets the power state of the dishwasher
+ */
+export async function setDishwasherPowerState(haId, isOn) {
+  const token = await getValidAccessToken();
+  
+  const payload = {
+    data: {
+      key: 'BSH.Common.Setting.PowerState',
+      value: isOn ? 'BSH.Common.EnumType.PowerState.On' : 'BSH.Common.EnumType.PowerState.Off'
+    }
+  };
+
+  const response = await fetch(`${API_URL}/api/homeappliances/${haId}/settings/BSH.Common.Setting.PowerState`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/vnd.bsh.sdk.v1+json',
+      'Accept': 'application/vnd.bsh.sdk.v1+json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`Failed to set power state: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  return true;
+}
+
+/**
+ * Stops the currently active program on the dishwasher
+ */
+export async function stopDishwasherProgram(haId) {
+  const token = await getValidAccessToken();
+  
+  const response = await fetch(`${API_URL}/api/homeappliances/${haId}/programs/active`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.bsh.sdk.v1+json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    // 404 means no active program, which is not necessarily an error we need to throw loudly
+    if (response.status === 404) return true;
+    
+    throw new Error(`Failed to stop program: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  return true;
+}

@@ -17,9 +17,10 @@ import {
   Coffee, 
   ChevronRight,
   X,
-  Droplets,
   Star,
-  Printer
+  Printer,
+  Zap,
+  Square
 } from 'lucide-react';
 
 export default function Home() {
@@ -30,6 +31,9 @@ export default function Home() {
   const [dishwashers, setDishwashers] = useState([]);
   const [error, setError] = useState(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isTestSheetOpen, setIsTestSheetOpen] = useState(false);
+  const [testActionLoading, setTestActionLoading] = useState(null);
+  const [selectedTestAppliance, setSelectedTestAppliance] = useState(null);
   
   // Selection state
   const [selectedAppliance, setSelectedAppliance] = useState(null);
@@ -101,6 +105,34 @@ export default function Home() {
   const openScheduling = (appliance) => {
     setSelectedAppliance(appliance);
     setIsSheetOpen(true);
+  };
+
+  const openTestPanel = (appliance) => {
+    setSelectedTestAppliance(appliance);
+    setIsTestSheetOpen(true);
+  };
+
+  const handleTestAction = async (actionName) => {
+    try {
+      setTestActionLoading(actionName);
+      const response = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: actionName,
+          applianceId: selectedTestAppliance.haId
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'הפעולה נכשלה');
+      
+      alert('הפקודה נשלחה בהצלחה!');
+    } catch (error) {
+      alert('שגיאה בשליחת הפקודה: ' + error.message);
+    } finally {
+      setTestActionLoading(null);
+    }
   };
 
   const handleSchedule = async () => {
@@ -302,12 +334,20 @@ export default function Home() {
                     <Trash2 size={20} />
                   </button>
                 </div>
-              ) : (
-                <button className="btn-add" onClick={() => openScheduling(d)}>
-                  <Plus size={18} />
-                  תזמן הפעלה חדשה
+              ) : null}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                {!applianceSchedule && (
+                  <button className="btn-add" style={{ flex: 1 }} onClick={() => openScheduling(d)}>
+                    <Plus size={18} />
+                    תזמן
+                  </button>
+                )}
+                <button className="btn-add" style={{ flex: 1, backgroundColor: '#f2f2f7', color: 'var(--text)', borderColor: 'var(--border)' }} onClick={() => openTestPanel(d)}>
+                  <Zap size={18} />
+                  שליטה
                 </button>
-              )}
+              </div>
             </div>
           );
         })
@@ -387,6 +427,49 @@ export default function Home() {
         </button>
       </div>
 
+      {/* Bottom Sheet for Immediate Test/Control */}
+      <div className={`overlay ${isTestSheetOpen ? 'open' : ''}`} onClick={() => setIsTestSheetOpen(false)} />
+      <div className={`bottom-sheet ${isTestSheetOpen ? 'open' : ''}`} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: '700' }}>שליטה מיידית: {selectedTestAppliance && (APPLIANCE_NAMES[selectedTestAppliance.haId] || selectedTestAppliance.name)}</h2>
+          <button onClick={() => setIsTestSheetOpen(false)} style={{ background: '#f2f2f7', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {selectedTestAppliance?.type === 'CoffeeMaker' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '2rem' }}>
+            <button className="test-btn test-on" onClick={() => handleTestAction('coffeeOn')} disabled={!!testActionLoading}>
+              <Power size={20} />
+              {testActionLoading === 'coffeeOn' ? 'שולח...' : 'הדלק מכונה (Fingerbot)'}
+            </button>
+            <button className="test-btn test-primary" onClick={() => handleTestAction('coffeePress')} disabled={!!testActionLoading}>
+              <Coffee size={20} />
+              {testActionLoading === 'coffeePress' ? 'שולח...' : 'לחץ להכנה (SwitchBot)'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+            <button className="test-btn test-on" onClick={() => handleTestAction('powerOn')} disabled={!!testActionLoading}>
+              <Power size={20} />
+              {testActionLoading === 'powerOn' ? 'שולח...' : 'הדלק מדיח'}
+            </button>
+            <button className="test-btn test-off" onClick={() => handleTestAction('powerOff')} disabled={!!testActionLoading}>
+              <Power size={20} />
+              {testActionLoading === 'powerOff' ? 'שולח...' : 'כבה מדיח'}
+            </button>
+            <button className="test-btn test-primary" style={{ gridColumn: '1 / -1' }} onClick={() => handleTestAction('startQuick')} disabled={!!testActionLoading}>
+              <Play size={20} />
+              {testActionLoading === 'startQuick' ? 'שולח...' : 'הפעל תוכנית מהירה'}
+            </button>
+            <button className="test-btn test-stop" style={{ gridColumn: '1 / -1' }} onClick={() => handleTestAction('stop')} disabled={!!testActionLoading}>
+              <Square size={20} fill="currentColor" />
+              {testActionLoading === 'stop' ? 'שולח...' : 'עצור תוכנית פעילה'}
+            </button>
+          </div>
+        )}
+      </div>
+
       <style jsx>{`
         .form-control {
           width: 100%;
@@ -415,6 +498,43 @@ export default function Home() {
         .preset-card:active {
           background: var(--primary-soft);
           border-color: var(--primary);
+        }
+        .test-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 1rem;
+          border-radius: 12px;
+          font-weight: 600;
+          font-size: 1rem;
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .test-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+        .test-on {
+          background-color: #e4f8ec;
+          color: #10b981;
+          border-color: #10b981;
+        }
+        .test-off {
+          background-color: #fef2f2;
+          color: #ef4444;
+          border-color: #ef4444;
+        }
+        .test-primary {
+          background-color: var(--primary-soft);
+          color: var(--primary);
+          border-color: var(--primary);
+        }
+        .test-stop {
+          background-color: transparent;
+          color: #ef4444;
+          border-color: #ef4444;
         }
       `}</style>
     </main>
