@@ -36,11 +36,19 @@ export async function POST(request) {
     const webhookUrl = `${protocol}://${host}/api/process-queue`;
 
     try {
-      await scheduleWebhook(webhookUrl, scheduled_time, {
+      const qstashResult = await scheduleWebhook(webhookUrl, scheduled_time, {
         schedule_id: scheduleId,
         source: 'qstash'
       });
       
+      if (!qstashResult) {
+        return NextResponse.json({ 
+          message: 'נשמר במסד הנתונים, אך התזמון נכשל (חסר QSTASH_TOKEN)', 
+          id: scheduleId,
+          qstash: false 
+        }, { status: 200 }); // Still 200 because DB record exists
+      }
+
       return NextResponse.json({ 
         message: 'Scheduled successfully', 
         id: scheduleId,

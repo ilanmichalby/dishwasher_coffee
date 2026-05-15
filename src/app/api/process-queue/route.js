@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getDishwashers, startDishwasherProgram } from '@/lib/bosch';
+import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms } from '@/lib/bosch';
 import { triggerFingerbot } from '@/lib/smartthings';
 import { pressBot } from '@/lib/switchbot';
 import { APPLIANCE_NAMES } from '@/lib/constants';
@@ -96,11 +96,18 @@ async function handleRequest(request) {
     // 3. Process each schedule
     for (const schedule of pendingSchedules) {
       try {
-        // Mark as processing immediately to prevent duplicate runs
-        await supabase
+        // Mark as processing immediately to prevent duplicate runs (atomic check)
+        const { data: updated, error: updateError } = await supabase
           .from('schedules')
           .update({ status: 'processing' })
-          .eq('id', schedule.id);
+          .eq('id', schedule.id)
+          .eq('status', 'pending')
+          .select();
+
+        if (updateError || !updated || updated.length === 0) {
+          console.log(`Schedule ${schedule.id} already being processed or failed update. Skipping.`);
+          continue;
+        }
 
         // Find the specific dishwasher or fallback to the first one
         const targetHaId = schedule.appliance_id || dishwashers[0].haId;
@@ -142,7 +149,57 @@ async function handleRequest(request) {
           
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
-          await startDishwasherProgram(targetHaId, schedule.program_key, schedule.options || {});
+          
+          // 1. Ensure power is ON
+          console.log('Step 1: Ensuring dishwasher is powered ON...');
+          await setDishwasherPowerState(targetHaId, true);
+          
+          // 2. Wait for power state to stabilize (5 seconds)
+          console.log('Step 2: Waiting 5 seconds for power state to stabilize...');
+          await sleep(5000);
+
+          // 2.5 Check if Remote Start is allowed
+          console.log('Step 2.5: Checking if Remote Start is allowed...');
+          const { status: currentStatus } = await getDishwasherStatus(targetHaId) || { status: [] };
+          const remoteStartAllowed = currentStatus?.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
+          const doorState = currentStatus?.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
+
+          if (doorState !== 'BSH.Common.EnumType.DoorState.Closed') {
+            throw new Error('המדיח פתוח. יש לסגור את הדלת כדי להפעיל מרחוק.');
+          }
+
+          if (remoteStartAllowed === false) {
+            throw new Error('Remote Start אינו מאופשר במדיח. יש ללחוץ על כפתור ה-Remote Start במכשיר.');
+          }
+          
+          // 3. Validate program key
+          console.log('Step 3: Validating program key...');
+          const availablePrograms = await getAvailablePrograms(targetHaId);
+          let finalProgramKey = schedule.program_key;
+          
+          const isSupported = availablePrograms.some(p => p.key === finalProgramKey);
+          
+          if (!isSupported) {
+            console.warn(`Program ${finalProgramKey} is NOT supported by ${dishwasherName}. Searching for match...`);
+            
+            // Try to find a match by last part (e.g. Quick45 vs Quick65)
+            const requestedBase = finalProgramKey.split('.').pop().replace(/[0-9]/g, ''); // "Quick", "Auto"
+            const match = availablePrograms.find(p => p.key.includes(requestedBase));
+            
+            if (match) {
+              console.log(`Found matching program: ${match.key}`);
+              finalProgramKey = match.key;
+            } else {
+              // Fallback to Eco50 or first available
+              const fallback = availablePrograms.find(p => p.key.includes('Eco50')) || availablePrograms[0];
+              finalProgramKey = fallback?.key;
+              console.log(`No match found. Falling back to: ${finalProgramKey}`);
+            }
+          }
+          
+          // 4. Start program
+          console.log(`Step 4: Starting program ${finalProgramKey}...`);
+          await startDishwasherProgram(targetHaId, finalProgramKey, schedule.options || {});
         }
 
         // Mark as completed

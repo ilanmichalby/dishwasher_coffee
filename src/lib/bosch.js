@@ -175,3 +175,77 @@ export async function stopDishwasherProgram(haId) {
 
   return true;
 }
+
+/**
+ * Gets the detailed status of a dishwasher
+ */
+export async function getDishwasherStatus(haId) {
+  const token = await getValidAccessToken();
+  
+  try {
+    // 1. Get basic status (Power, Operation State, Door)
+    const statusResponse = await fetch(`${API_URL}/api/homeappliances/${haId}/status`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.bsh.sdk.v1+json'
+      }
+    });
+
+    // 2. Get active program (if any) to see remaining time
+    const activeProgramResponse = await fetch(`${API_URL}/api/homeappliances/${haId}/programs/active`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.bsh.sdk.v1+json'
+      }
+    });
+
+    let statusData = [];
+    if (statusResponse.ok) {
+      const data = await statusResponse.json();
+      statusData = data.data.status;
+    }
+
+    let activeProgram = null;
+    if (activeProgramResponse.ok) {
+      const data = await activeProgramResponse.json();
+      activeProgram = data.data;
+    }
+
+    return {
+      status: statusData,
+      activeProgram: activeProgram
+    };
+  } catch (error) {
+    console.error(`Error fetching status for ${haId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Gets the available programs for a dishwasher
+ */
+export async function getAvailablePrograms(haId) {
+  const token = await getValidAccessToken();
+  
+  try {
+    const response = await fetch(`${API_URL}/api/homeappliances/${haId}/programs/available`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.bsh.sdk.v1+json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error(`Failed to get available programs for ${haId}: ${response.status}`, errorData);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.data.programs || [];
+  } catch (error) {
+    console.error(`Error fetching available programs for ${haId}:`, error);
+    return [];
+  }
+}
+

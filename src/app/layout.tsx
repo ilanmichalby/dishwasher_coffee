@@ -12,14 +12,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Dishwasher Scheduler",
-  description: "Schedule your Bosch dishwasher ahead of time",
+  title: "הבית החכם v3.0",
+  description: "ניהול ותזמון חכם למכשירי החשמל בבית",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="he" dir="rtl" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body className="antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

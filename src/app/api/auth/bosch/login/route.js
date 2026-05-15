@@ -8,8 +8,8 @@ export async function GET() {
     return NextResponse.json({ error: 'Missing HOME_CONNECT configuration' }, { status: 500 });
   }
 
-  // Define scopes: IdentifyAppliance (to get devices), Monitor (to check status), Control (to start programs)
-  const scope = 'IdentifyAppliance Monitor Control';
+  // Define scopes: IdentifyAppliance (to get devices), Monitor (to check status), Control (to start programs), Settings (to modify settings)
+  const scope = 'IdentifyAppliance Monitor Control Settings';
   const responseType = 'code';
 
   const authUrl = new URL('https://api.home-connect.com/security/oauth/authorize');

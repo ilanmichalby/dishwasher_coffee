@@ -16,13 +16,28 @@ export async function POST(request) {
     switch (action) {
       // --- Dishwashers ---
       case 'powerOn':
+      case 'power-on':
         result = await setDishwasherPowerState(applianceId, true);
         break;
       case 'powerOff':
+      case 'power-off':
         result = await setDishwasherPowerState(applianceId, false);
         break;
       case 'startQuick':
-        result = await startDishwasherProgram(applianceId, 'Dishcare.Dishwasher.Program.Kurz60');
+      case 'start':
+        {
+          const { getAvailablePrograms } = require('@/lib/bosch');
+          const programs = await getAvailablePrograms(applianceId);
+          // Try to find a quick program, fallback to Eco50, fallback to first available
+          let programKey = 'Dishcare.Dishwasher.Program.Eco50';
+          const quickProg = programs.find(p => p.key.includes('Quick') || p.key.includes('Kurz'));
+          if (quickProg) {
+            programKey = quickProg.key;
+          } else if (programs.length > 0 && !programs.find(p => p.key === programKey)) {
+            programKey = programs[0].key;
+          }
+          result = await startDishwasherProgram(applianceId, programKey);
+        }
         break;
       case 'stop':
         result = await stopDishwasherProgram(applianceId);
