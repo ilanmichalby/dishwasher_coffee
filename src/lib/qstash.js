@@ -34,6 +34,7 @@ export async function scheduleWebhook(url, scheduledTimeIso, body = {}) {
       // Add a header to identify the request source
       headers: {
         "x-qstash-source": "dishwasher-app",
+        "Authorization": `Bearer ${process.env.CRON_SECRET}`,
       }
     });
 
