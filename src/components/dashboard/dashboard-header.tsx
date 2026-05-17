@@ -39,7 +39,7 @@ export function DashboardHeader() {
     <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
       <div>
         <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tighter">
-          שלום, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-sky-400">משפחת כהן</span>
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-sky-400">משפחת בן יעקב</span>
         </h1>
         {currentTime && (
           <p className="text-slate-400 font-medium mt-2 flex items-center gap-2">
