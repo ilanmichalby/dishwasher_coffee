@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Sheet,
   SheetContent,
@@ -26,6 +26,8 @@ interface ScheduleSheetProps {
   onOpenChange: (open: boolean) => void
   appliance: Appliance | null
   onAddSchedule: (schedule: Omit<ScheduledTask, "id">) => void
+  editingSchedule?: ScheduledTask | null
+  onUpdateSchedule?: (id: string, schedule: Omit<ScheduledTask, "id">) => void
 }
 
 const programs = [
@@ -43,26 +45,48 @@ const presets = [
   { label: "בוקר יום חול", time: "07:00", icon: "☀️" },
 ]
 
-export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule }: ScheduleSheetProps) {
+export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, editingSchedule, onUpdateSchedule }: ScheduleSheetProps) {
   const [date, setDate] = useState("")
   const [time, setTime] = useState("")
-  const [program, setProgram] = useState("")
+  const [program, setProgram] = useState("Dishcare.Dishwasher.Program.Quick65")
+
+  useEffect(() => {
+    if (editingSchedule) {
+      // Extract YYYY-MM-DD from rawDate
+      if (editingSchedule.rawDate) {
+        setDate(editingSchedule.rawDate.split('T')[0]);
+        const d = new Date(editingSchedule.rawDate);
+        setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      }
+      setProgram(editingSchedule.program_key || "");
+    } else {
+      setDate("");
+      setTime("");
+      setProgram("Dishcare.Dishwasher.Program.Quick65");
+    }
+  }, [editingSchedule, open]);
 
   const handleSubmit = () => {
     if (!appliance || !date || !time || !program) return
     
-    onAddSchedule({
+    const scheduleData = {
       applianceId: appliance.haId,
       applianceName: appliance.nameHe,
       date,
       time,
-      program: program, // Pass the key (value from Select)
+      program: program,
       isShabbat: time === "15:00" || time === "21:00",
-    })
+    };
+
+    if (editingSchedule && onUpdateSchedule) {
+      onUpdateSchedule(editingSchedule.id, scheduleData);
+    } else {
+      onAddSchedule(scheduleData);
+    }
     
     setDate("")
     setTime("")
-    setProgram("")
+    setProgram("Dishcare.Dishwasher.Program.Quick65")
   }
 
   const applyPreset = (preset: typeof presets[0]) => {
@@ -73,7 +97,7 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule }: 
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="dark bg-slate-900/95 backdrop-blur-xl border-t border-white/10 rounded-t-3xl h-[85vh] sm:h-auto sm:max-h-[85vh] text-white">
         <SheetHeader className="text-right">
-          <SheetTitle className="text-xl">תזמון הפעלה</SheetTitle>
+          <SheetTitle className="text-xl">{editingSchedule ? 'עריכת תזמון' : 'תזמון הפעלה'}</SheetTitle>
           <SheetDescription className="text-slate-400">
             {appliance ? `תזמון עבור ${appliance.nameHe}` : "בחר מכשיר לתזמון"}
           </SheetDescription>
@@ -107,13 +131,36 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule }: 
               <Calendar className="h-4 w-4 text-primary" />
               תאריך
             </Label>
-            <Input
-              id="date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="bg-white/5 border-white/10 text-white focus:ring-primary"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-white/5 border-white/10 text-white focus:ring-primary flex-1"
+              />
+              <Button
+                variant="outline"
+                className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                onClick={() => {
+                  const d = new Date();
+                  setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+                }}
+              >
+                היום
+              </Button>
+              <Button
+                variant="outline"
+                className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 1);
+                  setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+                }}
+              >
+                מחר
+              </Button>
+            </div>
           </div>
 
           {/* Time */}
@@ -162,7 +209,7 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule }: 
               onClick={handleSubmit}
               disabled={!date || !time || !program}
             >
-              שמור תזמון
+              {editingSchedule ? 'עדכן תזמון' : 'שמור תזמון'}
             </Button>
           </div>
         </div>

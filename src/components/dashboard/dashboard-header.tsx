@@ -23,6 +23,7 @@ export function DashboardHeader() {
       day: "numeric",
       month: "long",
       year: "numeric",
+      timeZone: "Asia/Jerusalem",
     })
   }
 
@@ -30,6 +31,7 @@ export function DashboardHeader() {
     return date.toLocaleTimeString("he-IL", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Jerusalem",
     })
   }
 

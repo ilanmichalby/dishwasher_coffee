@@ -70,6 +70,7 @@ export default function SmartHomeDashboard() {
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [controlSheetOpen, setControlSheetOpen] = useState(false);
   const [selectedAppliance, setSelectedAppliance] = useState(null);
+  const [editingSchedule, setEditingSchedule] = useState(null);
 
   useEffect(() => {
     checkAuth();
@@ -147,6 +148,50 @@ export default function SmartHomeDashboard() {
       fetchData();
     } catch (error) {
       alert('שגיאה בתזמון: ' + error.message);
+    }
+  };
+
+  const handleDeleteSchedule = async (id) => {
+    try {
+      const response = await fetch('/api/schedule', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'נכשל במחיקה');
+      }
+      
+      fetchData();
+    } catch (error) {
+      alert('שגיאה במחיקה: ' + error.message);
+    }
+  };
+
+  const handleUpdateSchedule = async (id, scheduleData) => {
+    try {
+      const response = await fetch('/api/schedule', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          scheduled_time: new Date(`${scheduleData.date}T${scheduleData.time}:00`).toISOString(),
+          program_key: scheduleData.program
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'נכשל בעדכון');
+      }
+      
+      setEditingSchedule(null);
+      setScheduleSheetOpen(false);
+      fetchData();
+    } catch (error) {
+      alert('שגיאה בעדכון: ' + error.message);
     }
   };
 
@@ -234,14 +279,41 @@ export default function SmartHomeDashboard() {
     id: s.id,
     applianceId: s.appliance_id,
     applianceName: APPLIANCE_NAMES[s.appliance_id] || 'מכשיר',
-    date: new Date(s.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' }),
-    time: new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+    date: new Date(s.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' }),
+    time: new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' }),
     rawDate: s.scheduled_time,
     status: s.status || 'pending',
     last_error: s.last_error,
     program: s.program_key.split('.').pop(),
     isShabbat: true // All schedules in this app are essentially for Shabbat
   }));
+
+  const mappedActivity = schedules
+    .filter(s => s.status === 'completed' || s.status === 'failed')
+    .sort((a, b) => new Date(b.scheduled_time).getTime() - new Date(a.scheduled_time).getTime())
+    .slice(0, 5)
+    .map(s => ({
+      id: s.id,
+      appliance_id: s.appliance_id,
+      applianceName: APPLIANCE_NAMES[s.appliance_id] || 'מכשיר',
+      action: s.program_key?.split('.').pop() || 'הפעלה',
+      success: s.status === 'completed',
+      status: s.status,
+      program_key: s.program_key,
+      scheduled_time: s.scheduled_time,
+      timestamp: `${new Date(s.scheduled_time).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' })} ${new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}`
+    }));
+
+  const now = new Date();
+  const threeDaysLater = new Date();
+  threeDaysLater.setDate(now.getDate() + 3);
+
+  const printSchedules = schedules
+    .filter(s => {
+      const sDate = new Date(s.scheduled_time);
+      return sDate >= now && sDate <= threeDaysLater && s.status === 'pending';
+    })
+    .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime());
 
   if (isLoading) {
     return (
@@ -318,7 +390,14 @@ export default function SmartHomeDashboard() {
                 <span className="w-1.5 h-6 bg-emerald-500 rounded-full" />
                 לוח זמנים מתוזמן
               </h2>
-              <ScheduleTable schedules={mappedSchedules} />
+              <ScheduleTable 
+                schedules={mappedSchedules} 
+                onDelete={handleDeleteSchedule}
+                onEdit={(schedule) => {
+                  setEditingSchedule(schedule);
+                  setScheduleSheetOpen(true);
+                }}
+              />
             </section>
           </div>
 
@@ -329,9 +408,38 @@ export default function SmartHomeDashboard() {
                 <span className="w-1.5 h-6 bg-amber-500 rounded-full" />
                 פעילות אחרונה
               </h2>
-              <RecentActivity activity={[]} />
+              <RecentActivity activity={mappedActivity} />
             </section>
           </div>
+        </div>
+
+        {/* Print Only Section */}
+        <div className="print-only mt-8 hidden">
+          <h1 className="text-2xl font-bold mb-4 text-black text-center">תזמונים ל-3 הימים הקרובים</h1>
+          {printSchedules.length === 0 ? (
+            <p className="text-black text-center">אין תזמונים קרובים ל-3 הימים הבאים.</p>
+          ) : (
+            <table className="w-full border-collapse border border-black">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-black p-2 text-right text-black">מכשיר</th>
+                  <th className="border border-black p-2 text-right text-black">תאריך</th>
+                  <th className="border border-black p-2 text-right text-black">שעה</th>
+                  <th className="border border-black p-2 text-right text-black">תוכנית</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printSchedules.map((schedule) => (
+                  <tr key={schedule.id}>
+                    <td className="border border-black p-2 text-black">{APPLIANCE_NAMES[schedule.appliance_id] || 'מכשיר'}</td>
+                    <td className="border border-black p-2 text-black">{new Date(schedule.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' })}</td>
+                    <td className="border border-black p-2 text-black">{new Date(schedule.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}</td>
+                    <td className="border border-black p-2 text-black">{schedule.program_key?.split('.').pop()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -339,9 +447,14 @@ export default function SmartHomeDashboard() {
 
       <ScheduleSheet
         open={scheduleSheetOpen}
-        onOpenChange={setScheduleSheetOpen}
+        onOpenChange={(open) => {
+          setScheduleSheetOpen(open);
+          if (!open) setEditingSchedule(null); // Clear editing state on close
+        }}
         appliance={selectedAppliance}
         onAddSchedule={handleAddSchedule}
+        editingSchedule={editingSchedule}
+        onUpdateSchedule={handleUpdateSchedule}
       />
       
       <ControlSheet

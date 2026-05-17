@@ -10,14 +10,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Calendar, Star, History, CheckCircle2, XCircle, Clock, RefreshCw } from "lucide-react"
+import { Calendar, Star, History, CheckCircle2, XCircle, Clock, RefreshCw, Pencil, Trash2 } from "lucide-react"
 import type { ScheduledTask } from "@/app/page"
 
 interface ScheduleTableProps {
   schedules: ScheduledTask[]
+  onDelete?: (id: string) => void
+  onEdit?: (schedule: ScheduledTask) => void
 }
 
-export function ScheduleTable({ schedules }: ScheduleTableProps) {
+export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProps) {
   const [showPast, setShowPast] = useState(false);
 
   const now = new Date();
@@ -29,8 +31,7 @@ export function ScheduleTable({ schedules }: ScheduleTableProps) {
 
   const filteredSchedules = sortedSchedules.filter(s => {
     if (showPast) return true;
-    // Show if pending OR if date is in the future
-    if (s.status === 'pending') return true;
+    // Show only if date is in the future
     if (s.rawDate && new Date(s.rawDate) >= now) return true;
     return false;
   });
@@ -80,6 +81,7 @@ export function ScheduleTable({ schedules }: ScheduleTableProps) {
                 <TableHead className="text-right text-muted-foreground">תאריך ושעה</TableHead>
                 <TableHead className="text-right text-muted-foreground">תוכנית</TableHead>
                 <TableHead className="text-right text-muted-foreground">סטטוס</TableHead>
+                <TableHead className="text-right text-muted-foreground">פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -109,6 +111,30 @@ export function ScheduleTable({ schedules }: ScheduleTableProps) {
                   </TableCell>
                   <TableCell>
                     {getStatusBadge(schedule.status, schedule.last_error)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-white"
+                        onClick={() => onEdit?.(schedule)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-red-500"
+                        onClick={() => {
+                          if (confirm('האם אתה בטוח שברצונך למחוק תזמון זה?')) {
+                            onDelete?.(schedule.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

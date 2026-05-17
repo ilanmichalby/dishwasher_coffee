@@ -69,3 +69,86 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const { id } = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing schedule ID' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('schedules')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Database error:', error);
+      return NextResponse.json({ error: 'Failed to delete schedule' }, { status: 500 });
+    }
+
+    return NextResponse.json({ message: 'Schedule deleted successfully' });
+  } catch (error) {
+    console.error('Schedule API error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const { id, scheduled_time, program_key } = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing schedule ID' }, { status: 400 });
+    }
+
+    // Fetch current to see if time changed
+    const { data: current, error: fetchError } = await supabase
+      .from('schedules')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !current) {
+      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
+    }
+
+    const updates = {};
+    if (scheduled_time) updates.scheduled_time = scheduled_time;
+    if (program_key) updates.program_key = program_key;
+
+    const { data, error: dbError } = await supabase
+      .from('schedules')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('Database error:', dbError);
+      return NextResponse.json({ error: 'Failed to update schedule' }, { status: 500 });
+    }
+
+    // If time changed, schedule a new webhook
+    if (scheduled_time && scheduled_time !== current.scheduled_time) {
+      const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+      const host = request.headers.get('host');
+      const webhookUrl = `${protocol}://${host}/api/process-queue`;
+
+      try {
+        await scheduleWebhook(webhookUrl, scheduled_time, {
+          schedule_id: id,
+          source: 'qstash_updated'
+        });
+      } catch (qstashError) {
+        console.error('QStash scheduling failed on update:', qstashError);
+      }
+    }
+
+    return NextResponse.json({ message: 'Schedule updated successfully', data });
+  } catch (error) {
+    console.error('Schedule API error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
