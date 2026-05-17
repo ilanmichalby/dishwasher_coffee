@@ -272,7 +272,11 @@ export default function SmartHomeDashboard() {
       status: getMappedStatus(d),
       progress: getProgress(d),
       remainingTime: getRemainingTime(d),
-      program: d.status?.activeProgram?.key?.split('.').pop() || 'Eco 50°C'
+      program: d.status?.activeProgram?.key?.split('.').pop() || 'Eco 50°C',
+      // Next upcoming pending schedule for this appliance
+      nextScheduledTime: schedules
+        .filter(s => s.appliance_id === d.haId && s.status === 'pending' && new Date(s.scheduled_time) > new Date())
+        .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime())[0]?.scheduled_time || null
     }));
 
   const mappedSchedules = schedules.map(s => ({
@@ -290,6 +294,7 @@ export default function SmartHomeDashboard() {
 
   const mappedActivity = schedules
     .filter(s => s.status === 'completed' || s.status === 'failed')
+    // Sort newest first (latest to earliest)
     .sort((a, b) => new Date(b.scheduled_time).getTime() - new Date(a.scheduled_time).getTime())
     .slice(0, 5)
     .map(s => ({
@@ -379,6 +384,7 @@ export default function SmartHomeDashboard() {
                     appliance={dishwasher}
                     onSchedule={() => handleOpenSchedule(dishwasher)}
                     onControl={() => handleOpenControl(dishwasher)}
+                    nextScheduledTime={dishwasher.nextScheduledTime}
                   />
                 ))}
                 <CoffeeMachineCard />

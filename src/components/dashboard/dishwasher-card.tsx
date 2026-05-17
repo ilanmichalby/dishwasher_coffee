@@ -4,13 +4,61 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Calendar, Settings2, Waves } from "lucide-react"
+import { Calendar, Settings2, Waves, Timer } from "lucide-react"
 import type { Appliance } from "@/app/page"
+import { useState, useEffect } from "react"
 
 interface DishwasherCardProps {
   appliance: Appliance
   onSchedule: () => void
   onControl: () => void
+  nextScheduledTime?: string | null
+}
+
+function CountdownTimer({ targetTime }: { targetTime: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>('')
+  const [isUrgent, setIsUrgent] = useState(false)
+
+  useEffect(() => {
+    const calculate = () => {
+      const diff = new Date(targetTime).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('עכשיו!')
+        setIsUrgent(true)
+        return
+      }
+      const totalSeconds = Math.floor(diff / 1000)
+      const days = Math.floor(totalSeconds / 86400)
+      const hours = Math.floor((totalSeconds % 86400) / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+      setIsUrgent(diff < 3600_000) // urgent when less than 1h
+      if (days > 0) {
+        setTimeLeft(`${days}י ${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`)
+      } else {
+        setTimeLeft(`${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`)
+      }
+    }
+    calculate()
+    const id = setInterval(calculate, 1000)
+    return () => clearInterval(id)
+  }, [targetTime])
+
+  return (
+    <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${
+      isUrgent
+        ? 'bg-amber-500/10 border-amber-500/30'
+        : 'bg-indigo-500/10 border-indigo-500/20'
+    }`}>
+      <Timer className={`h-3.5 w-3.5 shrink-0 ${isUrgent ? 'text-amber-400' : 'text-indigo-400'}`} />
+      <div className="min-w-0">
+        <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold leading-none mb-0.5">הפעלה הבאה</p>
+        <p className={`text-sm font-mono font-bold tabular-nums ${
+          isUrgent ? 'text-amber-300' : 'text-indigo-300'
+        }`}>{timeLeft}</p>
+      </div>
+    </div>
+  )
 }
 
 const statusLabels: Record<string, { label: string; className: string }> = {
@@ -24,7 +72,7 @@ const typeLabels: Record<string, { label: string; className: string }> = {
   dairy: { label: "חלבי", className: "bg-sky/20 text-sky border-sky/30" },
 }
 
-export function DishwasherCard({ appliance, onSchedule, onControl }: DishwasherCardProps) {
+export function DishwasherCard({ appliance, onSchedule, onControl, nextScheduledTime }: DishwasherCardProps) {
   const status = statusLabels[appliance.status]
   const type = typeLabels[appliance.type]
 
@@ -65,14 +113,20 @@ export function DishwasherCard({ appliance, onSchedule, onControl }: DishwasherC
         )}
         
         {appliance.status === "ready" && (
-          <div className="mb-4 py-4 text-center">
+          <div className="mb-4 py-2 text-center">
             <p className="text-muted-foreground text-sm">מוכן להפעלה</p>
           </div>
         )}
         
         {appliance.status === "finished" && (
-          <div className="mb-4 py-4 text-center">
+          <div className="mb-4 py-2 text-center">
             <p className="text-emerald text-sm font-medium">✓ התוכנית הסתיימה בהצלחה</p>
+          </div>
+        )}
+
+        {nextScheduledTime && appliance.status !== "running" && (
+          <div className="mb-4">
+            <CountdownTimer targetTime={nextScheduledTime} />
           </div>
         )}
 
