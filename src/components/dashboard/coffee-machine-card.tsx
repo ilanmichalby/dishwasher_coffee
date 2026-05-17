@@ -4,14 +4,12 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Coffee, Power, Droplets, Bean } from "lucide-react"
+import { Coffee, Power } from "lucide-react"
 
 export function CoffeeMachineCard() {
   const [isOn, setIsOn] = useState(true)
   const [isBrewing, setIsBrewing] = useState(false)
-  const waterLevel = 75
-  const beanLevel = 60
+
 
   const handleBrew = () => {
     if (!isOn) return
@@ -45,30 +43,7 @@ export function CoffeeMachineCard() {
       </CardHeader>
       
       <CardContent className="pt-2">
-        {/* Status Indicators */}
-        <div className="space-y-3 mb-4">
-          <div className="flex items-center gap-3">
-            <Droplets className="h-4 w-4 text-sky" />
-            <div className="flex-1">
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-300 font-medium">מפלס מים</span>
-                <span className="font-bold text-white">{waterLevel}%</span>
-              </div>
-              <Progress value={waterLevel} className="h-1.5 bg-slate-800" />
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Bean className="h-4 w-4 text-amber-600" />
-            <div className="flex-1">
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-300 font-medium">פולי קפה</span>
-                <span className="font-bold text-white">{beanLevel}%</span>
-              </div>
-              <Progress value={beanLevel} className="h-1.5 bg-slate-800" />
-            </div>
-          </div>
-        </div>
+
 
         {isBrewing && (
           <div className="mb-4 py-3 px-4 rounded-xl bg-amber-500/10 text-center">

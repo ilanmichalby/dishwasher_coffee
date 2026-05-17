@@ -50,6 +50,7 @@ export function DashboardHeader() {
       </div>
       
       <div className="flex items-center gap-3">
+        {/* Desktop print button */}
         <Button 
           variant="secondary" 
           className="glass-card hover:bg-white/10 transition-colors hidden sm:flex items-center gap-2 px-4"
@@ -57,6 +58,16 @@ export function DashboardHeader() {
         >
           <Printer className="h-5 w-5" />
           <span>הדפס לוח זמנים</span>
+        </Button>
+        {/* Mobile print button (icon only) */}
+        <Button
+          variant="secondary"
+          size="icon"
+          className="glass-card hover:bg-white/10 transition-colors sm:hidden"
+          onClick={handlePrint}
+        >
+          <Printer className="h-5 w-5" />
+          <span className="sr-only">הדפס לוח זמנים</span>
         </Button>
         <Button 
           variant="secondary" 
