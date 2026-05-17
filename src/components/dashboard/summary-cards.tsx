@@ -3,11 +3,10 @@ import { Activity, Zap, Calendar } from "lucide-react"
 
 interface SummaryCardsProps {
   activeDevices: number
-  powerUsage: string
   upcomingSchedules: number
 }
 
-export function SummaryCards({ activeDevices, powerUsage, upcomingSchedules }: SummaryCardsProps) {
+export function SummaryCards({ activeDevices, upcomingSchedules }: SummaryCardsProps) {
   const cards = [
     {
       title: "מכשירים פעילים",

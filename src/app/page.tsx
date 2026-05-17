@@ -15,6 +15,50 @@ import { FloatingNav } from "@/components/dashboard/floating-nav";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Power } from 'lucide-react';
 
+export interface Appliance {
+  haId: string;
+  name: string;
+  nameHe?: string;
+  type: string;
+  status: string;
+  program?: string;
+  progress?: number;
+  remainingTime?: string;
+  powerUsage?: number;
+  waterLevel?: number;
+}
+
+export interface ActivityLog {
+  id: string;
+  appliance_id: string;
+  applianceName?: string;
+  action?: string;
+  program_key: string;
+  status: string;
+  success?: boolean;
+  scheduled_time: string;
+  timestamp?: string;
+  completed_at?: string;
+  last_error?: string;
+}
+
+export interface ScheduledTask {
+  id: string;
+  appliance_id?: string;
+  applianceId?: string;
+  applianceName?: string;
+  program_key?: string;
+  program?: string;
+  status?: string;
+  scheduled_time?: string;
+  date?: string;
+  time?: string;
+  rawDate?: string;
+  isShabbat?: boolean;
+  retry_count?: number;
+  last_error?: string;
+}
+
 export default function SmartHomeDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -192,6 +236,9 @@ export default function SmartHomeDashboard() {
     applianceName: APPLIANCE_NAMES[s.appliance_id] || 'מכשיר',
     date: new Date(s.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' }),
     time: new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+    rawDate: s.scheduled_time,
+    status: s.status || 'pending',
+    last_error: s.last_error,
     program: s.program_key.split('.').pop(),
     isShabbat: true // All schedules in this app are essentially for Shabbat
   }));

@@ -10,6 +10,11 @@ import { DayPicker, getDefaultClassNames } from "react-day-picker";
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { type VariantProps } from "class-variance-authority"
+
+export type CalendarProps = React.ComponentProps<typeof DayPicker> & {
+  buttonVariant?: NonNullable<VariantProps<typeof buttonVariants>["variant"]>
+}
 
 function Calendar({
   className,
@@ -20,7 +25,7 @@ function Calendar({
   formatters,
   components,
   ...props
-}) {
+}: CalendarProps) {
   const defaultClassNames = getDefaultClassNames()
 
   return (
@@ -72,7 +77,7 @@ function Calendar({
         caption_label: cn("select-none font-medium", captionLayout === "label"
           ? "text-sm"
           : "[&>svg]:text-muted-foreground flex h-8 items-center gap-1 rounded-md pl-2 pr-1 text-sm [&>svg]:size-3.5", defaultClassNames.caption_label),
-        table: "w-full border-collapse",
+        month_grid: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
           "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal",
@@ -140,6 +145,9 @@ function CalendarDayButton({
   day,
   modifiers,
   ...props
+}: React.ComponentProps<typeof Button> & {
+  day: { date: Date };
+  modifiers: { selected?: boolean; range_start?: boolean; range_end?: boolean; range_middle?: boolean; focused?: boolean };
 }) {
   const defaultClassNames = getDefaultClassNames()
 

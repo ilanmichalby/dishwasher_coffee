@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms } from '@/lib/bosch';
+import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms, getDishwasherStatus } from '@/lib/bosch';
 import { triggerFingerbot } from '@/lib/smartthings';
 import { pressBot } from '@/lib/switchbot';
 import { APPLIANCE_NAMES } from '@/lib/constants';
@@ -154,52 +154,78 @@ async function handleRequest(request) {
           console.log('Step 1: Ensuring dishwasher is powered ON...');
           await setDishwasherPowerState(targetHaId, true);
           
-          // 2. Wait for power state to stabilize (5 seconds)
-          console.log('Step 2: Waiting 5 seconds for power state to stabilize...');
-          await sleep(5000);
-
-          // 2.5 Check if Remote Start is allowed
-          console.log('Step 2.5: Checking if Remote Start is allowed...');
-          const { status: currentStatus } = await getDishwasherStatus(targetHaId) || { status: [] };
-          const remoteStartAllowed = currentStatus?.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
-          const doorState = currentStatus?.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
-
-          if (doorState !== 'BSH.Common.EnumType.DoorState.Closed') {
-            throw new Error('המדיח פתוח. יש לסגור את הדלת כדי להפעיל מרחוק.');
-          }
-
-          if (remoteStartAllowed === false) {
-            throw new Error('Remote Start אינו מאופשר במדיח. יש ללחוץ על כפתור ה-Remote Start במכשיר.');
-          }
+          // 2. Wait for power state to stabilize and Remote Start to be allowed
+          console.log('Step 2: Waiting for power state and remote start to stabilize...');
           
-          // 3. Validate program key
-          console.log('Step 3: Validating program key...');
-          const availablePrograms = await getAvailablePrograms(targetHaId);
-          let finalProgramKey = schedule.program_key;
+          let remoteStartAllowed = false;
+          let doorState = null;
+          let operationState = null;
           
-          const isSupported = availablePrograms.some(p => p.key === finalProgramKey);
-          
-          if (!isSupported) {
-            console.warn(`Program ${finalProgramKey} is NOT supported by ${dishwasherName}. Searching for match...`);
+          for (let i = 0; i < 6; i++) {
+            await sleep(5000);
+            const statusResponse = await getDishwasherStatus(targetHaId);
+            const currentStatus = statusResponse?.status || [];
             
-            // Try to find a match by last part (e.g. Quick45 vs Quick65)
-            const requestedBase = finalProgramKey.split('.').pop().replace(/[0-9]/g, ''); // "Quick", "Auto"
-            const match = availablePrograms.find(p => p.key.includes(requestedBase));
+            remoteStartAllowed = currentStatus?.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
+            doorState = currentStatus?.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
+            operationState = currentStatus?.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
             
-            if (match) {
-              console.log(`Found matching program: ${match.key}`);
-              finalProgramKey = match.key;
-            } else {
-              // Fallback to Eco50 or first available
-              const fallback = availablePrograms.find(p => p.key.includes('Eco50')) || availablePrograms[0];
-              finalProgramKey = fallback?.key;
-              console.log(`No match found. Falling back to: ${finalProgramKey}`);
+            if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
+              console.log('Dishwasher is already running. Skipping program start.');
+              break;
+            }
+            
+            if (remoteStartAllowed === true && doorState === 'BSH.Common.EnumType.DoorState.Closed') {
+              break;
             }
           }
+
+          if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
+             // Mark as completed since it's already running. This prevents errors when a schedule triggers while the dishwasher is already on.
+             // We'll skip the actual start program call.
+             console.log('Skipping start as it is already running.');
+             // Fall through to mark schedule as completed.
+             finalProgramKey = null; // We'll use this to skip step 3 and 4
+          } else {
+             if (doorState !== 'BSH.Common.EnumType.DoorState.Closed') {
+               throw new Error('המדיח פתוח. יש לסגור את הדלת כדי להפעיל מרחוק.');
+             }
+
+             if (remoteStartAllowed === false) {
+               throw new Error('Remote Start אינו מאופשר במדיח. יש ללחוץ על כפתור ה-Remote Start במכשיר.');
+             }
+          }
           
-          // 4. Start program
-          console.log(`Step 4: Starting program ${finalProgramKey}...`);
-          await startDishwasherProgram(targetHaId, finalProgramKey, schedule.options || {});
+          if (operationState !== 'BSH.Common.EnumType.OperationState.Run') {
+            // 3. Validate program key
+            console.log('Step 3: Validating program key...');
+            const availablePrograms = await getAvailablePrograms(targetHaId);
+            let finalProgramKey = schedule.program_key;
+            
+            const isSupported = availablePrograms.some(p => p.key === finalProgramKey);
+            
+            if (!isSupported) {
+              console.warn(`Program ${finalProgramKey} is NOT supported by ${dishwasherName}. Searching for match...`);
+              
+              // Try to find a match by last part (e.g. Quick45 vs Quick65)
+              const requestedBase = finalProgramKey.split('.').pop().replace(/[0-9]/g, ''); // "Quick", "Auto"
+              const match = availablePrograms.find(p => p.key.includes(requestedBase));
+              
+              if (match) {
+                console.log(`Found matching program: ${match.key}`);
+                finalProgramKey = match.key;
+              } else {
+                // Fallback to Eco50 or first available
+                const fallback = availablePrograms.find(p => p.key.includes('Eco50')) || availablePrograms[0];
+                finalProgramKey = fallback?.key;
+                console.log(`No match found. Falling back to: ${finalProgramKey}`);
+              }
+            }
+            
+            // 4. Start program
+            console.log(`Step 4: Starting program ${finalProgramKey}...`);
+            await startDishwasherProgram(targetHaId, finalProgramKey, schedule.options || {});
+          }
         }
 
         // Mark as completed

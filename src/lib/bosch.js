@@ -144,6 +144,10 @@ export async function setDishwasherPowerState(haId, isOn) {
   });
 
   if (!response.ok) {
+    if (response.status === 409) {
+      console.log(`Power state is already in the requested state (409 Conflict).`);
+      return true;
+    }
     const errorData = await response.json().catch(() => ({}));
     throw new Error(`Failed to set power state: ${response.status} - ${JSON.stringify(errorData)}`);
   }

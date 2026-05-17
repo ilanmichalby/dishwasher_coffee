@@ -52,7 +52,7 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule }: 
     if (!appliance || !date || !time || !program) return
     
     onAddSchedule({
-      applianceId: appliance.id,
+      applianceId: appliance.haId,
       applianceName: appliance.nameHe,
       date,
       time,
