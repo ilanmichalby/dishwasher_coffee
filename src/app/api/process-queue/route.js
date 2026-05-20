@@ -173,14 +173,15 @@ async function handleRequest(request) {
           let doorState = undefined;
           let operationState = undefined;
           let deviceWentOffline = false;
-          
-          for (let i = 0; i < 6; i++) {
+
+          // Wait longer after power-on: 10 polls × 5s = 50s (was 6 × 5s = 30s)
+          for (let i = 0; i < 10; i++) {
             await sleep(5000);
             const statusResponse = await getDishwasherStatus(targetHaId);
 
             // Bug fix: null statusResponse means device is unreachable (offline)
             if (statusResponse === null) {
-              console.warn(`Status poll ${i + 1}/6 returned null for ${dishwasherName} — device may be offline.`);
+              console.warn(`Status poll ${i + 1}/10 returned null for ${dishwasherName} — device may be offline.`);
               deviceWentOffline = true;
               continue; // retry
             }
@@ -198,8 +199,10 @@ async function handleRequest(request) {
             }
             
             if (remoteStartAllowed === true && doorState === 'BSH.Common.EnumType.DoorState.Closed') {
+              console.log(`Poll ${i + 1}: Ready — remoteStart=true, door=Closed`);
               break;
             }
+            console.log(`Poll ${i + 1}/10: remoteStart=${remoteStartAllowed}, door=${doorState}, operation=${operationState}`);
           }
 
           // If ALL polls returned null, device is offline
@@ -226,8 +229,8 @@ async function handleRequest(request) {
               throw doorErr;
             }
 
-            if (remoteStartAllowed === false) {
-              const remoteErr = new Error(`Remote Start אינו מאופשר ב-${dishwasherName}. יש ללחוץ על כפתור ה-Remote Start במכשיר.`);
+            if (remoteStartAllowed !== true) {
+              const remoteErr = new Error(`Remote Start אינו מאופשר ב-${dishwasherName}. יש ללחוץ על כפתור ה-Remote Start במכשיר. (got: ${remoteStartAllowed})`);
               remoteErr.errorType = 'REMOTE_START_DISABLED';
               throw remoteErr;
             }
@@ -235,6 +238,11 @@ async function handleRequest(request) {
             // 4. Validate program key
             console.log('Step 3: Validating program key...');
             const availablePrograms = await getAvailablePrograms(targetHaId);
+
+            if (!availablePrograms || availablePrograms.length === 0) {
+              throw new Error(`לא נמצאו תוכניות זמינות עבור ${dishwasherName}. ייתכן שהמכשיר עדיין לא מוכן.`);
+            }
+
             let finalProgramKey = schedule.program_key;
             
             const isSupported = availablePrograms.some(p => p.key === finalProgramKey);
