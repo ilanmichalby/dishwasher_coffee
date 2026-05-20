@@ -155,93 +155,68 @@ async function handleRequest(request) {
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
 
-          // 1. Check connectivity BEFORE doing anything
+          // 1. Check connectivity
           if (connectivityMap[targetHaId] === false) {
             const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מחובר (אופליין). לא ניתן להפעיל מרחוק.`);
             offlineErr.errorType = 'DEVICE_OFFLINE';
             throw offlineErr;
           }
 
-          // 2. Get current status FIRST (before powering on) to check if already ready
-          console.log('Step 1: Checking current dishwasher status...');
-          const preStatus = await getDishwasherStatus(targetHaId);
-          const preStatusList = preStatus?.status || [];
+          // 2. Always send power-on (idempotent — safe to call even if already on)
+          console.log('Step 1: Sending power-on command...');
+          await setDishwasherPowerState(targetHaId, true);
 
-          const preOperationState = preStatusList.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
-          const preRemoteStart = preStatusList.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
-          const preDoorState = preStatusList.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
+          // 3. Short wait then get status (3s keeps us well under Netlify timeout)
+          await sleep(3000);
+          console.log('Step 2: Checking status after power-on...');
+          const statusResponse = await getDishwasherStatus(targetHaId);
 
-          console.log(`Pre-status: operation=${preOperationState}, remoteStart=${preRemoteStart}, door=${preDoorState}`);
+          if (!statusResponse) {
+            const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מגיב. ייתכן שהוא אופליין.`);
+            offlineErr.errorType = 'DEVICE_OFFLINE';
+            throw offlineErr;
+          }
 
-          // If already running — nothing to do
-          if (preOperationState === 'BSH.Common.EnumType.OperationState.Run') {
-            console.log('Dishwasher is already running. Marking completed.');
-            // fall through to mark as completed below
+          const statusList = statusResponse.status || [];
+          const remoteStartAllowed = statusList.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
+          const doorState = statusList.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
+          const operationState = statusList.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
+
+          console.log(`Status: operation=${operationState}, remoteStart=${remoteStartAllowed}, door=${doorState}`);
+
+          // Already running — nothing to do
+          if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
+            console.log('Already running — marking completed.');
           } else {
-            // 3. Check door before doing anything
-            if (preDoorState === 'BSH.Common.EnumType.DoorState.Open') {
-              const doorErr = new Error(`דלת ${dishwasherName} פתוחה. יש לסגור את הדלת כדי להפעיל מרחוק.`);
-              doorErr.errorType = 'DOOR_OPEN';
-              throw doorErr;
-            }
-
-            // 4. Power ON (only if not already on)
-            const isReadyOrStandby = preOperationState && preOperationState !== 'BSH.Common.EnumType.OperationState.Inactive';
-            if (!isReadyOrStandby) {
-              console.log('Step 2: Powering ON dishwasher...');
-              await setDishwasherPowerState(targetHaId, true);
-              // Short wait after power-on (stays well under Netlify timeout)
-              await sleep(5000);
-            } else {
-              console.log('Step 2: Dishwasher already on, skipping power-on.');
-            }
-
-            // 5. Check if Remote Start is ready (single check, no long loop)
-            console.log('Step 3: Checking Remote Start status...');
-            const postStatus = await getDishwasherStatus(targetHaId);
-            const postStatusList = postStatus?.status || [];
-
-            const remoteStartAllowed = postStatusList.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
-            const doorState = postStatusList.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
-            const operationState = postStatusList.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
-
-            console.log(`Post-status: operation=${operationState}, remoteStart=${remoteStartAllowed}, door=${doorState}`);
-
-            if (!postStatus) {
-              const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מגיב לאחר הדלקה.`);
-              offlineErr.errorType = 'DEVICE_OFFLINE';
-              throw offlineErr;
-            }
-
+            // Door check
             if (doorState === 'BSH.Common.EnumType.DoorState.Open') {
               const doorErr = new Error(`דלת ${dishwasherName} פתוחה. יש לסגור את הדלת כדי להפעיל מרחוק.`);
               doorErr.errorType = 'DOOR_OPEN';
               throw doorErr;
             }
 
-            // If Remote Start not yet enabled — reschedule for 60s later (avoid long inline wait)
+            // Remote Start not ready yet → reschedule +45s instead of waiting inline
             if (remoteStartAllowed !== true) {
-              console.warn(`Remote Start not ready (got: ${remoteStartAllowed}). Rescheduling in 60s...`);
-              const retryTime = new Date(Date.now() + 60000).toISOString();
+              console.warn(`Remote Start not ready (${remoteStartAllowed}). Rescheduling +45s...`);
+              const retryTime = new Date(Date.now() + 45000).toISOString();
               await supabase
                 .from('schedules')
-                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[WAITING_REMOTE_START] remoteStartAllowed=${remoteStartAllowed} — retry at ${retryTime}` })
+                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[WAITING_REMOTE_START] got=${remoteStartAllowed}` })
                 .eq('id', schedule.id);
               results.push({ id: schedule.id, status: 'rescheduled', reason: 'waiting_remote_start' });
-              continue; // skip to next schedule
+              continue;
             }
 
-            // 6. Validate program key
-            console.log('Step 4: Validating program key...');
+            // 4. Get available programs
+            console.log('Step 3: Getting available programs...');
             const availablePrograms = await getAvailablePrograms(targetHaId);
 
             if (!availablePrograms || availablePrograms.length === 0) {
-              // Programs list sometimes unavailable right after power-on — reschedule
-              console.warn('No available programs returned. Rescheduling in 30s...');
+              console.warn('No programs available yet. Rescheduling +30s...');
               const retryTime = new Date(Date.now() + 30000).toISOString();
               await supabase
                 .from('schedules')
-                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[NO_PROGRAMS] programs list empty — retry at ${retryTime}` })
+                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[NO_PROGRAMS] programs list empty` })
                 .eq('id', schedule.id);
               results.push({ id: schedule.id, status: 'rescheduled', reason: 'no_programs' });
               continue;
@@ -251,21 +226,21 @@ async function handleRequest(request) {
             const isSupported = availablePrograms.some(p => p.key === finalProgramKey);
 
             if (!isSupported) {
-              console.warn(`Program ${finalProgramKey} not supported. Searching for match...`);
+              console.warn(`Program ${finalProgramKey} not found. Finding match...`);
               const requestedBase = finalProgramKey.split('.').pop().replace(/[0-9]/g, '');
               const match = availablePrograms.find(p => p.key.includes(requestedBase));
               if (match) {
-                console.log(`Found matching program: ${match.key}`);
                 finalProgramKey = match.key;
+                console.log(`Using matched program: ${finalProgramKey}`);
               } else {
                 const fallback = availablePrograms.find(p => p.key.includes('Eco50')) || availablePrograms[0];
                 finalProgramKey = fallback?.key;
-                console.log(`No match found. Falling back to: ${finalProgramKey}`);
+                console.log(`Fallback program: ${finalProgramKey}`);
               }
             }
 
-            // 7. Start program
-            console.log(`Step 5: Starting program ${finalProgramKey}...`);
+            // 5. Start program
+            console.log(`Step 4: Starting program ${finalProgramKey}...`);
             await startDishwasherProgram(targetHaId, finalProgramKey, schedule.options || {});
           }
         }
