@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { setDishwasherPowerState, startDishwasherProgram, stopDishwasherProgram } from '@/lib/bosch';
-import { triggerFingerbot } from '@/lib/smartthings';
+import { triggerFingerbot } from '@/lib/tuya';
 import { pressBot } from '@/lib/switchbot';
 
 export async function POST(request) {
@@ -45,11 +45,12 @@ export async function POST(request) {
       
       // --- Coffee Machine ---
       case 'coffeeOn':
-        result = await triggerFingerbot(applianceId);
+        // Toggle power via Fingerbot (Tuya/Smart Life)
+        result = await triggerFingerbot();
         break;
       case 'coffeePress':
-        // Hardcoded SwitchBot device ID as per existing logic in process-queue
-        result = await pressBot('E8158ABAA498'); 
+        // Press coffee button via SwitchBot Bot
+        result = await pressBot(process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498'); 
         break;
         
       default:

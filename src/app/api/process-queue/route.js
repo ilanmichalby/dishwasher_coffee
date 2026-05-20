@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms, getDishwasherStatus } from '@/lib/bosch';
-import { triggerFingerbot } from '@/lib/smartthings';
+import { triggerFingerbot } from '@/lib/tuya';
 import { pressBot } from '@/lib/switchbot';
 import { APPLIANCE_NAMES } from '@/lib/constants';
 import { Receiver } from "@upstash/qstash";
@@ -88,8 +88,11 @@ async function handleRequest(request) {
       return NextResponse.json({ error: 'No dishwashers found in Bosch account' }, { status: 404 });
     }
 
-    // Assume we use the first dishwasher found
-    const dishwasherHaId = dishwashers[0].haId;
+    // Build a connectivity map: haId -> connected (boolean)
+    const connectivityMap = {};
+    for (const dw of dishwashers) {
+      connectivityMap[dw.haId] = dw.connected !== false; // treat missing field as connected
+    }
 
     const results = [];
 
@@ -119,9 +122,11 @@ async function handleRequest(request) {
         if (targetHaId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
           console.log(`Starting ROBUST COFFEE SEQUENCE for ${dishwasherName}...`);
           
-          // 1. Power ON (SmartThings)
-          console.log('Step 1: Power ON via SmartThings...');
-          await triggerFingerbot(targetHaId);
+          const switchbotDeviceId = process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498';
+
+          // 1. Power ON (Tuya / Smart Life Fingerbot)
+          console.log('Step 1: Power ON via Tuya Fingerbot...');
+          await triggerFingerbot();
           
           // 2. Wait for heating (60 seconds)
           console.log('Step 2: Waiting 60 seconds for heating...');
@@ -129,7 +134,7 @@ async function handleRequest(request) {
           
           // 3. Press Coffee Button (SwitchBot)
           console.log('Step 3: Pressing coffee button via SwitchBot...');
-          await pressBot('E8158ABAA498');
+          await pressBot(switchbotDeviceId);
           
           // 4. Wait for fallback (60 seconds)
           console.log('Step 4: Waiting 60 seconds for fallback...');
@@ -137,38 +142,55 @@ async function handleRequest(request) {
 
           // 5. Fallback Press (SwitchBot)
           console.log('Step 5: Fallback press via SwitchBot...');
-          await pressBot('E8158ABAA498');
+          await pressBot(switchbotDeviceId);
 
           // 6. Wait for coffee to finish (3 minutes)
           console.log('Step 6: Waiting 3 minutes for coffee to finish...');
           await sleep(180000);
 
-          // 7. Power OFF (SmartThings)
-          console.log('Step 7: Power OFF via SmartThings to reset state...');
-          await triggerFingerbot(targetHaId);
+          // 7. Power OFF (Tuya / Smart Life Fingerbot)
+          console.log('Step 7: Power OFF via Tuya Fingerbot to reset state...');
+          await triggerFingerbot();
           
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
-          
-          // 1. Ensure power is ON
+
+          // 1. Check connectivity BEFORE doing anything (Bug fix: offline showed as "door open")
+          if (connectivityMap[targetHaId] === false) {
+            const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מחובר (אופליין). לא ניתן להפעיל מרחוק.`);
+            offlineErr.errorType = 'DEVICE_OFFLINE';
+            throw offlineErr;
+          }
+
+          // 2. Ensure power is ON
           console.log('Step 1: Ensuring dishwasher is powered ON...');
           await setDishwasherPowerState(targetHaId, true);
           
-          // 2. Wait for power state to stabilize and Remote Start to be allowed
+          // 3. Wait for power state to stabilize and Remote Start to be allowed
           console.log('Step 2: Waiting for power state and remote start to stabilize...');
           
-          let remoteStartAllowed = false;
-          let doorState = null;
-          let operationState = null;
+          let remoteStartAllowed = undefined;
+          let doorState = undefined;
+          let operationState = undefined;
+          let deviceWentOffline = false;
           
           for (let i = 0; i < 6; i++) {
             await sleep(5000);
             const statusResponse = await getDishwasherStatus(targetHaId);
-            const currentStatus = statusResponse?.status || [];
+
+            // Bug fix: null statusResponse means device is unreachable (offline)
+            if (statusResponse === null) {
+              console.warn(`Status poll ${i + 1}/6 returned null for ${dishwasherName} — device may be offline.`);
+              deviceWentOffline = true;
+              continue; // retry
+            }
+
+            deviceWentOffline = false; // successfully got a response
+            const currentStatus = statusResponse.status || [];
             
-            remoteStartAllowed = currentStatus?.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
-            doorState = currentStatus?.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
-            operationState = currentStatus?.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
+            remoteStartAllowed = currentStatus.find(s => s.key === 'BSH.Common.Status.RemoteControlStartAllowed')?.value;
+            doorState = currentStatus.find(s => s.key === 'BSH.Common.Status.DoorState')?.value;
+            operationState = currentStatus.find(s => s.key === 'BSH.Common.Status.OperationState')?.value;
             
             if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
               console.log('Dishwasher is already running. Skipping program start.');
@@ -180,24 +202,37 @@ async function handleRequest(request) {
             }
           }
 
-          if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
-             // Mark as completed since it's already running. This prevents errors when a schedule triggers while the dishwasher is already on.
-             // We'll skip the actual start program call.
-             console.log('Skipping start as it is already running.');
-             // Fall through to mark schedule as completed.
-             finalProgramKey = null; // We'll use this to skip step 3 and 4
-          } else {
-             if (doorState !== 'BSH.Common.EnumType.DoorState.Closed') {
-               throw new Error('המדיח פתוח. יש לסגור את הדלת כדי להפעיל מרחוק.');
-             }
-
-             if (remoteStartAllowed === false) {
-               throw new Error('Remote Start אינו מאופשר במדיח. יש ללחוץ על כפתור ה-Remote Start במכשיר.');
-             }
+          // If ALL polls returned null, device is offline
+          if (deviceWentOffline && operationState === undefined) {
+            const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מגיב (אופליין). נסה שנית מאוחר יותר.`);
+            offlineErr.errorType = 'DEVICE_OFFLINE';
+            throw offlineErr;
           }
-          
-          if (operationState !== 'BSH.Common.EnumType.OperationState.Run') {
-            // 3. Validate program key
+
+          if (operationState === 'BSH.Common.EnumType.OperationState.Run') {
+            // Already running — skip program start, fall through to mark as completed
+            console.log('Skipping start as it is already running.');
+          } else {
+            // Bug fix: distinguish offline (undefined doorState) from truly open door
+            if (doorState === undefined) {
+              const offlineErr = new Error(`לא ניתן לקבל סטטוס מ-${dishwasherName}. ייתכן שהמכשיר אופליין.`);
+              offlineErr.errorType = 'DEVICE_OFFLINE';
+              throw offlineErr;
+            }
+
+            if (doorState !== 'BSH.Common.EnumType.DoorState.Closed') {
+              const doorErr = new Error(`דלת ${dishwasherName} פתוחה. יש לסגור את הדלת כדי להפעיל מרחוק.`);
+              doorErr.errorType = 'DOOR_OPEN';
+              throw doorErr;
+            }
+
+            if (remoteStartAllowed === false) {
+              const remoteErr = new Error(`Remote Start אינו מאופשר ב-${dishwasherName}. יש ללחוץ על כפתור ה-Remote Start במכשיר.`);
+              remoteErr.errorType = 'REMOTE_START_DISABLED';
+              throw remoteErr;
+            }
+
+            // 4. Validate program key
             console.log('Step 3: Validating program key...');
             const availablePrograms = await getAvailablePrograms(targetHaId);
             let finalProgramKey = schedule.program_key;
@@ -222,7 +257,7 @@ async function handleRequest(request) {
               }
             }
             
-            // 4. Start program
+            // 5. Start program
             console.log(`Step 4: Starting program ${finalProgramKey}...`);
             await startDishwasherProgram(targetHaId, finalProgramKey, schedule.options || {});
           }
@@ -237,20 +272,26 @@ async function handleRequest(request) {
         results.push({ id: schedule.id, status: 'completed' });
 
       } catch (error) {
-        console.error(`Failed to execute schedule ${schedule.id}:`, error);
+        const errorType = error.errorType || 'UNKNOWN';
+        console.error(`Failed to execute schedule ${schedule.id} [${errorType}]:`, error.message);
 
-        // Increment retry count and save error
+        const newRetryCount = schedule.retry_count + 1;
+        const isFatal = errorType === 'DOOR_OPEN' || errorType === 'REMOTE_START_DISABLED';
+        // Fatal errors (door open, no remote start) don't benefit from retrying — mark failed immediately
+        const newStatus = isFatal || newRetryCount >= 5 ? 'failed' : 'pending';
+
+        // Save structured error info to DB for dashboard display
+        const logMessage = `[${new Date().toISOString()}] [${errorType}] ${error.message}`;
         await supabase
           .from('schedules')
           .update({ 
-            retry_count: schedule.retry_count + 1,
-            last_error: error.message,
-            // If it hits max retries, mark as failed
-            status: schedule.retry_count + 1 >= 5 ? 'failed' : 'pending'
+            retry_count: newRetryCount,
+            last_error: logMessage,
+            status: newStatus
           })
           .eq('id', schedule.id);
           
-        results.push({ id: schedule.id, status: 'failed', error: error.message });
+        results.push({ id: schedule.id, status: newStatus, error: error.message, errorType });
       }
     }
 

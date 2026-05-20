@@ -14,6 +14,7 @@ import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { FloatingNav } from "@/components/dashboard/floating-nav";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Power } from 'lucide-react';
+import { VoiceCommandBar } from "@/components/dashboard/voice-command-bar";
 
 export interface Appliance {
   haId: string;
@@ -356,7 +357,11 @@ export default function SmartHomeDashboard() {
           upcomingSchedules={mappedSchedules.length}
         />
 
-        <div className="flex justify-end mt-4">
+        <div className="mt-8">
+          <VoiceCommandBar onScheduleSuccess={fetchData} />
+        </div>
+
+        <div className="flex justify-end mt-6">
           <Button 
             variant="outline" 
             size="sm" 

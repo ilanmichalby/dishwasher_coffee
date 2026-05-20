@@ -1,27 +1,50 @@
+import crypto from 'crypto';
 
-const API_URL = 'https://api.switch-bot.com/v1.0';
+const API_URL = 'https://api.switch-bot.com/v1.1';
 
 /**
- * Sends a command to a SwitchBot device
+ * Generates SwitchBot API v1.1 authentication headers.
+ * Requires SWITCHBOT_TOKEN and SWITCHBOT_SECRET env vars.
+ */
+function getAuthHeaders() {
+  const token = process.env.SWITCHBOT_TOKEN;
+  const secret = process.env.SWITCHBOT_SECRET;
+
+  if (!token || !secret) {
+    throw new Error('SWITCHBOT_TOKEN or SWITCHBOT_SECRET is not configured');
+  }
+
+  const t = Date.now().toString();
+  const nonce = crypto.randomUUID();
+  const data = token + t + nonce;
+  const sign = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64');
+
+  return {
+    'Authorization': token,
+    'sign': sign,
+    't': t,
+    'nonce': nonce,
+    'Content-Type': 'application/json',
+  };
+}
+
+/**
+ * Sends a command to a SwitchBot device (API v1.1)
  */
 export async function sendSwitchBotCommand(deviceId, command, parameter = 'default', commandType = 'command') {
-  const token = process.env.SWITCHBOT_TOKEN;
-  
-  if (!token) {
-    throw new Error('SWITCHBOT_TOKEN is not configured');
-  }
+  const headers = getAuthHeaders();
 
   const response = await fetch(`${API_URL}/devices/${deviceId}/commands`, {
     method: 'POST',
-    headers: {
-      'Authorization': token,
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({
-      command: command,
-      parameter: parameter,
-      commandType: commandType
-    })
+      command,
+      parameter,
+      commandType,
+    }),
   });
 
   if (!response.ok) {
@@ -33,8 +56,27 @@ export async function sendSwitchBotCommand(deviceId, command, parameter = 'defau
 }
 
 /**
- * Specifically triggers a 'press' on a Bot
+ * Triggers a 'press' on a SwitchBot Bot device
  */
 export async function pressBot(deviceId) {
   return await sendSwitchBotCommand(deviceId, 'press');
+}
+
+/**
+ * Gets the list of devices from SwitchBot (useful for debugging)
+ */
+export async function getSwitchBotDevices() {
+  const headers = getAuthHeaders();
+
+  const response = await fetch(`${API_URL}/devices`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`SwitchBot API error: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  return await response.json();
 }
