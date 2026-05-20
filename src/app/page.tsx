@@ -289,8 +289,13 @@ export default function SmartHomeDashboard() {
     rawDate: s.scheduled_time,
     status: s.status || 'pending',
     last_error: s.last_error,
-    program: s.program_key.split('.').pop(),
-    isShabbat: true // All schedules in this app are essentially for Shabbat
+    program: s.program_key === 'coffee.full' ? 'קפה (מלא)' : s.program_key === 'coffee.brew_only' ? 'קפה (הכנה בלבד)' : s.program_key.split('.').pop(),
+    program_key: s.program_key,
+    isShabbat: (() => {
+      const d = new Date(s.scheduled_time);
+      const day = d.getDay();
+      return day === 5 || day === 6;
+    })()
   }));
 
   const mappedActivity = schedules
@@ -392,7 +397,13 @@ export default function SmartHomeDashboard() {
                     nextScheduledTime={dishwasher.nextScheduledTime}
                   />
                 ))}
-                <CoffeeMachineCard />
+                <CoffeeMachineCard onSchedule={() => handleOpenSchedule({
+                  haId: '9103117a-3163-4aa6-a4fb-b0a50acf832a',
+                  name: 'מכונת קפה',
+                  nameHe: 'מכונת קפה',
+                  type: 'CoffeeMaker',
+                  status: 'ready'
+                })} />
               </div>
             </section>
 

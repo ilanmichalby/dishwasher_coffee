@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mic, Sparkles, Check, Trash2, Calendar, Clock, Loader2, AlertCircle, Info } from "lucide-react";
+import { Mic, Sparkles, Check, Trash2, Calendar, Clock, Loader2, AlertCircle, Info, Coffee } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseText } from "@/lib/nlpParser";
@@ -162,12 +162,19 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
     }
   };
 
+  const getCoffeeMode = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('coffeeMode') || 'brew_only';
+    }
+    return 'brew_only';
+  };
+
   const handleParsing = (text: string) => {
     if (!text.trim()) {
       setParsedResult(null);
       return;
     }
-    const result = parseText(text);
+    const result = parseText(text, getCoffeeMode());
     setParsedResult(result);
   };
 
@@ -224,6 +231,7 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
     "מדיח חלבי מחר ב-2 בלילה מהיר",
     "מדיח בשרי ביום ראשון בשמונה בערב חיסכון",
     "היום ב-16:00 אוטומטי",
+    "קפה מחר בשש בבוקר",
   ];
 
   const applyPreset = (presetText: string) => {
@@ -243,7 +251,7 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
             תזמון חכם בקול ובטקסט
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            דבר בקולך או הקלד פקודה חופשית בעברית לתזמון מהיר של המדיח
+            דבר בקולך או הקלד פקודה חופשית בעברית לתזמון מהיר. התחל ב&quot;קפה&quot; לתזמון מכונת קפה
           </p>
         </div>
 
@@ -377,10 +385,12 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
               >
                 {isScheduling ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : parsedResult?.isCoffee ? (
+                  <Coffee className="h-4 w-4" />
                 ) : (
                   <Check className="h-4 w-4" />
                 )}
-                אשר ותזמן מדיח
+                {parsedResult?.isCoffee ? 'אשר ותזמן קפה ☕' : 'אשר ותזמן מדיח'}
               </Button>
             </div>
           )}

@@ -4,13 +4,30 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Coffee, Power, AlertCircle, CheckCircle2, Loader2, Info } from "lucide-react"
+import { Coffee, Power, AlertCircle, CheckCircle2, Loader2, Info, Calendar, Settings2 } from "lucide-react"
 
-export function CoffeeMachineCard() {
+interface CoffeeMachineCardProps {
+  onSchedule?: () => void;
+}
+
+export function CoffeeMachineCard({ onSchedule }: CoffeeMachineCardProps) {
   const [isPowerLoading, setIsPowerLoading] = useState(false)
   const [isBrewLoading, setIsBrewLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
+  const [coffeeMode, setCoffeeMode] = useState<'full' | 'brew_only'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only';
+    }
+    return 'brew_only';
+  })
+
+  const toggleCoffeeMode = () => {
+    const next = coffeeMode === 'full' ? 'brew_only' : 'full';
+    setCoffeeMode(next);
+    localStorage.setItem('coffeeMode', next);
+  }
 
   const handleAction = async (actionName: 'coffeeOn' | 'coffeePress') => {
     const isPower = actionName === 'coffeeOn';
@@ -116,7 +133,7 @@ export function CoffeeMachineCard() {
         )}
 
         <div className="flex gap-3">
-          <Button 
+          <Button
             variant="secondary"
             className="flex-1 glass hover:bg-slate-800/80 border-white/5 text-slate-200"
             onClick={() => handleAction('coffeeOn')}
@@ -129,8 +146,8 @@ export function CoffeeMachineCard() {
             )}
             כפתור הפעלה
           </Button>
-          
-          <Button 
+
+          <Button
             variant="default"
             className="flex-1 bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/10"
             onClick={() => handleAction('coffeePress')}
@@ -144,6 +161,53 @@ export function CoffeeMachineCard() {
             הכנת קפה
           </Button>
         </div>
+
+        {/* Schedule & Settings */}
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            className="flex-1 glass hover:bg-slate-800/80 border-white/5 text-slate-200"
+            onClick={onSchedule}
+          >
+            <Calendar className="h-4 w-4 ml-2 text-indigo-400" />
+            תזמון קפה
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-slate-400 hover:text-white"
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <Settings2 className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Coffee Mode Toggle */}
+        {showSettings && (
+          <div className="bg-slate-950/40 rounded-xl p-3 border border-white/5 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="text-xs text-slate-400 font-medium">מצב תזמון קפה</div>
+            <button
+              onClick={toggleCoffeeMode}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+            >
+              <span className="text-sm text-white">
+                {coffeeMode === 'full' ? '🔌 הדלקה + הכנה + כיבוי' : '☕ הכנת קפה בלבד'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                coffeeMode === 'full'
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-amber-500/20 text-amber-400'
+              }`}>
+                {coffeeMode === 'full' ? 'מלא' : 'חלקי'}
+              </span>
+            </button>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              {coffeeMode === 'full'
+                ? 'התזמון ידליק את המכונה, ימתין להתחממות, יכין קפה ויכבה אותה.'
+                : 'התזמון רק ילחץ על כפתור הקפה. עליך להדליק את המכונה ידנית מראש.'}
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

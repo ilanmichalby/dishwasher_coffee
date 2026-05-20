@@ -5,12 +5,20 @@ const APPLIANCES = {
   DAIRY: {
     id: '401020522686007368',
     name: 'מדיח חלבי 🥛',
-    nameHe: 'מדיח חלבי'
+    nameHe: 'מדיח חלבי',
+    type: 'dishwasher'
   },
   MEATY: {
     id: '403120522686006531',
     name: 'מדיח בשרי 🥩',
-    nameHe: 'מדיח בשרי'
+    nameHe: 'מדיח בשרי',
+    type: 'dishwasher'
+  },
+  COFFEE: {
+    id: '9103117a-3163-4aa6-a4fb-b0a50acf832a',
+    name: 'מכונת קפה ☕',
+    nameHe: 'מכונת קפה',
+    type: 'coffee'
   }
 };
 
@@ -23,13 +31,18 @@ const PROGRAMS = {
   MachineCare: { key: 'Dishcare.Dishwasher.Program.MachineCare', name: 'ניקוי מכונה (Machine Care)' }
 };
 
+const COFFEE_PROGRAMS = {
+  Full: { key: 'coffee.full', name: 'הדלקה + הכנה + כיבוי' },
+  BrewOnly: { key: 'coffee.brew_only', name: 'הכנת קפה בלבד' }
+};
+
 const HEBREW_NUMBERS = {
   'אחת': 1, 'שתיים': 2, 'שתים': 2, 'שלוש': 3, 'ארבע': 4, 'חמש': 5, 
   'שש': 6, 'שבע': 7, 'שמונה': 8, 'תשע': 9, 'עשר': 10, 
   'אחת עשרה': 11, 'אחת-עשרה': 11, 'שתים עשרה': 12, 'שתים-עשרה': 12
 };
 
-export function parseText(text) {
+export function parseText(text, coffeeMode) {
   if (!text || !text.trim()) {
     return {
       device: APPLIANCES.DAIRY,
@@ -37,29 +50,38 @@ export function parseText(text) {
       date: null,
       dateStr: null,
       time: null,
+      isCoffee: false,
       rawText: ''
     };
   }
 
   text = text.toLowerCase().trim();
+  const isCoffee = text.startsWith('קפה');
   const result = {
     device: null,
     program: null,
     date: null,
     dateStr: null,
     time: null,
+    isCoffee,
     rawText: text
   };
 
   // 1. Device Identification
-  if (text.includes('חלבי') || text.includes('milky') || text.includes('dairy')) {
+  if (isCoffee) {
+    result.device = APPLIANCES.COFFEE;
+    result.program = coffeeMode === 'brew_only' ? COFFEE_PROGRAMS.BrewOnly : COFFEE_PROGRAMS.Full;
+    text = text.replace(/^קפה\s*/, '');
+  } else if (text.includes('חלבי') || text.includes('milky') || text.includes('dairy')) {
     result.device = APPLIANCES.DAIRY;
   } else if (text.includes('בשרי') || text.includes('meat') || text.includes('meaty')) {
     result.device = APPLIANCES.MEATY;
   }
 
-  // 2. Program Identification
-  if (text.includes('מהיר') || text.includes('מהירה') || text.includes('שעה') || text.includes('quick')) {
+  // 2. Program Identification (skip for coffee — already set above)
+  if (isCoffee) {
+    // no-op: coffee program is set during device identification
+  } else if (text.includes('מהיר') || text.includes('מהירה') || text.includes('שעה') || text.includes('quick')) {
     result.program = PROGRAMS.Quick65;
   } else if (text.includes('חיסכון') || text.includes('אקו') || text.includes('eco') || text.includes('הכי חסכוני')) {
     result.program = PROGRAMS.Eco50;
@@ -239,7 +261,7 @@ export function parseText(text) {
     result.device = APPLIANCES.DAIRY;
   }
   if (!result.program) {
-    result.program = PROGRAMS.Quick65;
+    result.program = result.isCoffee ? COFFEE_PROGRAMS.Full : PROGRAMS.Quick65;
   }
 
   return result;

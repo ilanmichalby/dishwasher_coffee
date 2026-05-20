@@ -18,8 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Calendar, Clock, Sparkles } from "lucide-react"
+import { Calendar, Clock, Sparkles, Coffee } from "lucide-react"
 import type { Appliance, ScheduledTask } from "@/app/page"
+
+const COFFEE_MACHINE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
 
 interface ScheduleSheetProps {
   open: boolean
@@ -46,44 +48,67 @@ const presets = [
 ]
 
 export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, editingSchedule, onUpdateSchedule }: ScheduleSheetProps) {
+  const isCoffee = appliance?.haId === COFFEE_MACHINE_ID;
+
   const [date, setDate] = useState("")
   const [time, setTime] = useState("")
   const [program, setProgram] = useState("Dishcare.Dishwasher.Program.Quick65")
+  const [coffeeMode, setCoffeeMode] = useState<'full' | 'brew_only'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only';
+    }
+    return 'brew_only';
+  })
 
   useEffect(() => {
     if (editingSchedule) {
-      // Extract YYYY-MM-DD from rawDate
       if (editingSchedule.rawDate) {
         setDate(editingSchedule.rawDate.split('T')[0]);
         const d = new Date(editingSchedule.rawDate);
         setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
       }
-      setProgram(editingSchedule.program_key || "");
+      if (editingSchedule.program_key?.startsWith('coffee.')) {
+        setCoffeeMode(editingSchedule.program_key === 'coffee.brew_only' ? 'brew_only' : 'full');
+      } else {
+        setProgram(editingSchedule.program_key || "");
+      }
     } else {
       setDate("");
       setTime("");
       setProgram("Dishcare.Dishwasher.Program.Quick65");
+      if (typeof window !== 'undefined') {
+        setCoffeeMode((localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only');
+      }
     }
   }, [editingSchedule, open]);
 
   const handleSubmit = () => {
-    if (!appliance || !date || !time || !program) return
-    
+    if (!appliance || !date || !time) return
+    if (!isCoffee && !program) return
+
+    const actualProgram = isCoffee
+      ? (coffeeMode === 'brew_only' ? 'coffee.brew_only' : 'coffee.full')
+      : program;
+
     const scheduleData = {
       applianceId: appliance.haId,
       applianceName: appliance.nameHe,
       date,
       time,
-      program: program,
+      program: actualProgram,
       isShabbat: time === "15:00" || time === "21:00",
     };
+
+    if (isCoffee) {
+      localStorage.setItem('coffeeMode', coffeeMode);
+    }
 
     if (editingSchedule && onUpdateSchedule) {
       onUpdateSchedule(editingSchedule.id, scheduleData);
     } else {
       onAddSchedule(scheduleData);
     }
-    
+
     setDate("")
     setTime("")
     setProgram("Dishcare.Dishwasher.Program.Quick65")
@@ -178,22 +203,52 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
             />
           </div>
 
-          {/* Program */}
-          <div className="space-y-2">
-            <Label className="text-slate-200">תוכנית</Label>
-            <Select value={program} onValueChange={setProgram}>
-              <SelectTrigger className="bg-white/5 border-white/10 text-white">
-                <SelectValue placeholder="בחר תוכנית" />
-              </SelectTrigger>
-              <SelectContent className="dark bg-slate-900 border-white/10 text-white">
-                {programs.map((prog) => (
-                  <SelectItem key={prog.value} value={prog.value}>
-                    {prog.labelHe} ({prog.label})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Program / Coffee Mode */}
+          {isCoffee ? (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-slate-200">
+                <Coffee className="h-4 w-4 text-amber-400" />
+                מצב הכנה
+              </Label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className={`flex-1 border-white/10 ${coffeeMode === 'full' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-white/5 text-white hover:bg-white/10'}`}
+                  onClick={() => setCoffeeMode('full')}
+                >
+                  🔌 הדלקה + הכנה + כיבוי
+                </Button>
+                <Button
+                  variant="outline"
+                  className={`flex-1 border-white/10 ${coffeeMode === 'brew_only' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-white/5 text-white hover:bg-white/10'}`}
+                  onClick={() => setCoffeeMode('brew_only')}
+                >
+                  ☕ הכנה בלבד
+                </Button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {coffeeMode === 'full'
+                  ? 'המערכת תדליק את המכונה, תמתין להתחממות, תכין קפה ותכבה.'
+                  : 'רק לחיצה על כפתור הקפה. הדלק את המכונה ידנית מראש.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label className="text-slate-200">תוכנית</Label>
+              <Select value={program} onValueChange={setProgram}>
+                <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectValue placeholder="בחר תוכנית" />
+                </SelectTrigger>
+                <SelectContent className="dark bg-slate-900 border-white/10 text-white">
+                  {programs.map((prog) => (
+                    <SelectItem key={prog.value} value={prog.value}>
+                      {prog.labelHe} ({prog.label})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-4">
@@ -207,9 +262,9 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
             <Button
               className="flex-1 bg-primary hover:bg-primary/80"
               onClick={handleSubmit}
-              disabled={!date || !time || !program}
+              disabled={!date || !time || (!isCoffee && !program)}
             >
-              {editingSchedule ? 'עדכן תזמון' : 'שמור תזמון'}
+              {editingSchedule ? 'עדכן תזמון' : (isCoffee ? 'תזמן קפה ☕' : 'שמור תזמון')}
             </Button>
           </div>
         </div>

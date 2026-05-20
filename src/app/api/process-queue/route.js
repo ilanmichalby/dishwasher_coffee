@@ -75,29 +75,34 @@ async function handleRequest(request) {
       return NextResponse.json({ message: 'No pending schedules to process.' });
     }
 
-    // 2. Fetch dishwashers to get the HaId (Home Appliance ID)
-    let dishwashers;
-    try {
-      dishwashers = await getDishwashers();
-    } catch (boschError) {
-      console.error('Failed to connect to Bosch API:', boschError);
-      return NextResponse.json({ error: 'Bosch API error' }, { status: 502 });
-    }
+    // 2. Split schedules: coffee vs dishwasher
+    const coffeeSchedules = pendingSchedules.filter(s => s.appliance_id === '9103117a-3163-4aa6-a4fb-b0a50acf832a');
+    const dishwasherSchedules = pendingSchedules.filter(s => s.appliance_id !== '9103117a-3163-4aa6-a4fb-b0a50acf832a');
 
-    if (!dishwashers || dishwashers.length === 0) {
-      return NextResponse.json({ error: 'No dishwashers found in Bosch account' }, { status: 404 });
-    }
-
-    // Build a connectivity map: haId -> connected (boolean)
+    // 3. Fetch dishwashers only if there are dishwasher schedules
+    let dishwashers = [];
     const connectivityMap = {};
-    for (const dw of dishwashers) {
-      connectivityMap[dw.haId] = dw.connected !== false; // treat missing field as connected
+
+    if (dishwasherSchedules.length > 0) {
+      try {
+        dishwashers = await getDishwashers();
+      } catch (boschError) {
+        console.error('Failed to connect to Bosch API:', boschError);
+        // Don't bail — still process coffee schedules below
+      }
+
+      if (dishwashers && dishwashers.length > 0) {
+        for (const dw of dishwashers) {
+          connectivityMap[dw.haId] = dw.connected !== false;
+        }
+      }
     }
 
     const results = [];
+    const allSchedules = [...coffeeSchedules, ...dishwasherSchedules];
 
-    // 3. Process each schedule
-    for (const schedule of pendingSchedules) {
+    // 4. Process each schedule
+    for (const schedule of allSchedules) {
       try {
         // Mark as processing immediately to prevent duplicate runs (atomic check)
         const { data: updated, error: updateError } = await supabase
@@ -120,37 +125,42 @@ async function handleRequest(request) {
         
         // Call the appropriate API based on the device type/ID
         if (targetHaId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
-          console.log(`Starting ROBUST COFFEE SEQUENCE for ${dishwasherName}...`);
-          
+          const isBrewOnly = schedule.program_key === 'coffee.brew_only';
+          console.log(`Starting COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) for ${dishwasherName}...`);
+
           const switchbotDeviceId = process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498';
 
-          // 1. Power ON (Tuya / Smart Life Fingerbot)
-          console.log('Step 1: Power ON via Tuya Fingerbot...');
-          await triggerFingerbot();
-          
-          // 2. Wait for heating (60 seconds)
-          console.log('Step 2: Waiting 60 seconds for heating...');
-          await sleep(60000);
-          
+          if (!isBrewOnly) {
+            // 1. Power ON (Tuya / Smart Life Fingerbot)
+            console.log('Step 1: Power ON via Tuya Fingerbot...');
+            await triggerFingerbot();
+
+            // 2. Wait for heating (60 seconds)
+            console.log('Step 2: Waiting 60 seconds for heating...');
+            await sleep(60000);
+          }
+
           // 3. Press Coffee Button (SwitchBot)
-          console.log('Step 3: Pressing coffee button via SwitchBot...');
+          console.log(`Step ${isBrewOnly ? 1 : 3}: Pressing coffee button via SwitchBot...`);
           await pressBot(switchbotDeviceId);
-          
+
           // 4. Wait for fallback (60 seconds)
-          console.log('Step 4: Waiting 60 seconds for fallback...');
+          console.log('Waiting 60 seconds for fallback press...');
           await sleep(60000);
 
           // 5. Fallback Press (SwitchBot)
-          console.log('Step 5: Fallback press via SwitchBot...');
+          console.log('Fallback press via SwitchBot...');
           await pressBot(switchbotDeviceId);
 
-          // 6. Wait for coffee to finish (3 minutes)
-          console.log('Step 6: Waiting 3 minutes for coffee to finish...');
-          await sleep(180000);
+          if (!isBrewOnly) {
+            // 6. Wait for coffee to finish (3 minutes)
+            console.log('Waiting 3 minutes for coffee to finish...');
+            await sleep(180000);
 
-          // 7. Power OFF (Tuya / Smart Life Fingerbot)
-          console.log('Step 7: Power OFF via Tuya Fingerbot to reset state...');
-          await triggerFingerbot();
+            // 7. Power OFF (Tuya / Smart Life Fingerbot)
+            console.log('Power OFF via Tuya Fingerbot to reset state...');
+            await triggerFingerbot();
+          }
           
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
