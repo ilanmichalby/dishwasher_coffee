@@ -18,9 +18,9 @@ export function CoffeeMachineCard({ onSchedule }: CoffeeMachineCardProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [coffeeMode, setCoffeeMode] = useState<'full' | 'brew_only'>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only';
+      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'full';
     }
-    return 'brew_only';
+    return 'full';
   })
 
   const toggleCoffeeMode = () => {

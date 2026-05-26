@@ -55,9 +55,9 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
   const [program, setProgram] = useState("Dishcare.Dishwasher.Program.Quick65")
   const [coffeeMode, setCoffeeMode] = useState<'full' | 'brew_only'>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only';
+      return (localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'full';
     }
-    return 'brew_only';
+    return 'full';
   })
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
       setTime("");
       setProgram("Dishcare.Dishwasher.Program.Quick65");
       if (typeof window !== 'undefined') {
-        setCoffeeMode((localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'brew_only');
+        setCoffeeMode((localStorage.getItem('coffeeMode') as 'full' | 'brew_only') || 'full');
       }
     }
   }, [editingSchedule, open]);

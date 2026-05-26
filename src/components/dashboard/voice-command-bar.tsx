@@ -164,9 +164,9 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
 
   const getCoffeeMode = () => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('coffeeMode') || 'brew_only';
+      return localStorage.getItem('coffeeMode') || 'full';
     }
-    return 'brew_only';
+    return 'full';
   };
 
   const handleParsing = (text: string) => {
