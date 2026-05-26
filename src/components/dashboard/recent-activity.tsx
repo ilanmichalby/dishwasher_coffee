@@ -33,6 +33,11 @@ export function RecentActivity({ activity }: RecentActivityProps) {
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">{log.applianceName}</p>
                 <p className="text-xs text-muted-foreground truncate">{log.action}</p>
+                {!log.success && log.last_error && (
+                  <p className="text-xs text-rose mt-1 break-words" title={log.last_error}>
+                    סיבת כישלון: {log.last_error}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col items-end gap-1">
                 <Badge 
