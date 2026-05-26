@@ -115,6 +115,6 @@ export async function triggerFingerbot() {
 
   // Fingerbot supports 'click' mode (single press) via 'switch' DP
   return await tuyaRequest('POST', `/v1.0/iot-03/devices/${deviceId}/commands`, {
-    commands: [{ code: 'switch', value: true }],
+    commands: [{ code: 'switch_1', value: true }],
   });
 }
