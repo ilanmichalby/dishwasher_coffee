@@ -312,6 +312,7 @@ export default function SmartHomeDashboard() {
       status: s.status,
       program_key: s.program_key,
       scheduled_time: s.scheduled_time,
+      last_error: s.last_error,
       timestamp: `${new Date(s.scheduled_time).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' })} ${new Date(s.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}`
     }));
 
