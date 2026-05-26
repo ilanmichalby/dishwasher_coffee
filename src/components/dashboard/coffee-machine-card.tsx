@@ -39,10 +39,18 @@ const STEP_STYLES: Record<CoffeeStepInfo['step'], { label: string; icon: string;
 
 function CoffeeStepTimer({ info }: { info: CoffeeStepInfo }) {
   const [timeLeft, setTimeLeft] = useState<string>('')
+  const [stale, setStale] = useState(false)
 
   useEffect(() => {
     const calc = () => {
       const diff = new Date(info.targetTime).getTime() - Date.now()
+      // If more than 30s overdue, treat as stale (waiting for next cron/QStash to fire)
+      if (diff < -30000) {
+        setStale(true)
+        setTimeLeft('ממתין לעיבוד...')
+        return
+      }
+      setStale(false)
       if (diff <= 0) {
         setTimeLeft('עכשיו!')
         return
@@ -59,12 +67,15 @@ function CoffeeStepTimer({ info }: { info: CoffeeStepInfo }) {
   }, [info.targetTime])
 
   const cfg = STEP_STYLES[info.step]
+  const boxCls = stale ? 'bg-slate-500/10 border-slate-500/30' : cfg.box
+  const iconCls = stale ? 'text-slate-400' : cfg.icon_cls
+  const textCls = stale ? 'text-slate-300' : cfg.text
   return (
-    <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${cfg.box}`}>
-      <Timer className={`h-3.5 w-3.5 shrink-0 ${cfg.icon_cls}`} />
+    <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${boxCls}`}>
+      <Timer className={`h-3.5 w-3.5 shrink-0 ${iconCls}`} />
       <div className="min-w-0 flex-1">
         <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold leading-none mb-0.5">{cfg.icon} {cfg.label}</p>
-        <p className={`text-sm font-mono font-bold tabular-nums ${cfg.text}`}>{timeLeft}</p>
+        <p className={`text-sm font-mono font-bold tabular-nums ${textCls}`}>{timeLeft}</p>
       </div>
     </div>
   )

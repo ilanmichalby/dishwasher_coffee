@@ -57,6 +57,15 @@ async function handleRequest(request) {
   }
 
   try {
+    // 0. Cleanup: reset stuck 'processing' rows older than 2 minutes back to 'pending'
+    // (covers cases where a previous run timed out mid-step on Netlify)
+    const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    await supabase
+      .from('schedules')
+      .update({ status: 'pending' })
+      .eq('status', 'processing')
+      .lt('scheduled_time', stuckCutoff);
+
     // 1. Fetch pending schedules whose time has passed
     const now = new Date().toISOString();
     
@@ -144,11 +153,13 @@ async function handleRequest(request) {
             await triggerFingerbot();
 
             const nextTime = new Date(Date.now() + 60000).toISOString();
-            await supabase
+            const { error: rescheduleErr } = await supabase
               .from('schedules')
               .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
               .eq('id', schedule.id);
-            await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+            if (rescheduleErr) console.error('Coffee POWER_ON reschedule DB error:', rescheduleErr);
+            const qres = await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+            console.log(`Coffee step 1 done. Next PRESS at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
             results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS' });
             continue;
           }
