@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms, getDishwasherStatus } from '@/lib/bosch';
 import { triggerFingerbot } from '@/lib/tuya';
 import { pressBot } from '@/lib/switchbot';
+import { scheduleWebhook } from '@/lib/qstash';
 import { APPLIANCE_NAMES } from '@/lib/constants';
 import { Receiver } from "@upstash/qstash";
 
@@ -126,34 +127,56 @@ async function handleRequest(request) {
         // Call the appropriate API based on the device type/ID
         if (targetHaId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
           const isBrewOnly = schedule.program_key === 'coffee.brew_only';
-          console.log(`Starting COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) for ${dishwasherName}...`);
-
           const switchbotDeviceId = process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498';
 
-          if (!isBrewOnly) {
-            // 1. Power ON (Tuya / Smart Life Fingerbot)
-            console.log('Step 1: Power ON via Tuya Fingerbot...');
+          // Determine current step from marker in last_error; default = first step.
+          const stepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
+          const step = stepMatch ? stepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+          console.log(`COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) step=${step} for ${dishwasherName}...`);
+
+          const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+          const host = request.headers.get('host');
+          const webhookUrl = `${protocol}://${host}/api/process-queue`;
+
+          if (step === 'POWER_ON') {
+            // 1. Power ON via Tuya Fingerbot, then reschedule PRESS in 60s
+            console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
             await triggerFingerbot();
 
-            // 2. Wait for heating (60 seconds)
-            console.log('Step 2: Waiting 60 seconds for heating...');
-            await sleep(60000);
+            const nextTime = new Date(Date.now() + 60000).toISOString();
+            await supabase
+              .from('schedules')
+              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
+              .eq('id', schedule.id);
+            await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+            results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS' });
+            continue;
           }
 
-          // 3. Press Coffee Button (SwitchBot)
-          console.log(`Step ${isBrewOnly ? 1 : 3}: Pressing coffee button via SwitchBot...`);
-          await pressBot(switchbotDeviceId);
+          if (step === 'PRESS') {
+            // 2. Press coffee button via SwitchBot
+            console.log('Coffee step 2: Pressing coffee button via SwitchBot...');
+            await pressBot(switchbotDeviceId);
 
-          if (!isBrewOnly) {
-            // 4. Wait for coffee to finish brewing (3 minutes)
-            console.log('Step 4: Waiting 3 minutes for coffee to finish...');
-            await sleep(180000);
-
-            // 5. Power OFF (Tuya / Smart Life Fingerbot)
-            console.log('Step 5: Power OFF via Tuya Fingerbot to reset state...');
+            if (!isBrewOnly) {
+              // Reschedule POWER_OFF in 3 minutes
+              const nextTime = new Date(Date.now() + 180000).toISOString();
+              await supabase
+                .from('schedules')
+                .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=POWER_OFF]' })
+                .eq('id', schedule.id);
+              await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+              results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_OFF' });
+              continue;
+            }
+            // brew_only: fall through to mark completed
+          } else if (step === 'POWER_OFF') {
+            // 3. Power OFF via Tuya Fingerbot
+            console.log('Coffee step 3: Power OFF via Tuya Fingerbot...');
             await triggerFingerbot();
+            // fall through to mark completed
           }
-          
+
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
 
