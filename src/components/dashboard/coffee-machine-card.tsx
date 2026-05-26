@@ -1,16 +1,76 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Coffee, Power, AlertCircle, CheckCircle2, Loader2, Info, Calendar, Settings2 } from "lucide-react"
+import { Coffee, Power, AlertCircle, CheckCircle2, Loader2, Info, Calendar, Settings2, Timer } from "lucide-react"
+
+interface CoffeeStepInfo {
+  step: 'POWER_ON' | 'PRESS' | 'POWER_OFF';
+  targetTime: string;
+}
 
 interface CoffeeMachineCardProps {
   onSchedule?: () => void;
+  nextStep?: CoffeeStepInfo | null;
 }
 
-export function CoffeeMachineCard({ onSchedule }: CoffeeMachineCardProps) {
+const STEP_STYLES: Record<CoffeeStepInfo['step'], { label: string; icon: string; box: string; icon_cls: string; text: string }> = {
+  POWER_ON: {
+    label: 'הדלקה בעוד', icon: '🔌',
+    box: 'bg-emerald-500/10 border-emerald-500/30',
+    icon_cls: 'text-emerald-400',
+    text: 'text-emerald-300',
+  },
+  PRESS: {
+    label: 'לחיצה בעוד', icon: '☕',
+    box: 'bg-amber-500/10 border-amber-500/30',
+    icon_cls: 'text-amber-400',
+    text: 'text-amber-300',
+  },
+  POWER_OFF: {
+    label: 'כיבוי בעוד', icon: '🛑',
+    box: 'bg-rose-500/10 border-rose-500/30',
+    icon_cls: 'text-rose-400',
+    text: 'text-rose-300',
+  },
+}
+
+function CoffeeStepTimer({ info }: { info: CoffeeStepInfo }) {
+  const [timeLeft, setTimeLeft] = useState<string>('')
+
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(info.targetTime).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('עכשיו!')
+        return
+      }
+      const total = Math.floor(diff / 1000)
+      const h = Math.floor(total / 3600)
+      const m = Math.floor((total % 3600) / 60)
+      const s = total % 60
+      setTimeLeft(`${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`)
+    }
+    calc()
+    const id = setInterval(calc, 1000)
+    return () => clearInterval(id)
+  }, [info.targetTime])
+
+  const cfg = STEP_STYLES[info.step]
+  return (
+    <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${cfg.box}`}>
+      <Timer className={`h-3.5 w-3.5 shrink-0 ${cfg.icon_cls}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold leading-none mb-0.5">{cfg.icon} {cfg.label}</p>
+        <p className={`text-sm font-mono font-bold tabular-nums ${cfg.text}`}>{timeLeft}</p>
+      </div>
+    </div>
+  )
+}
+
+export function CoffeeMachineCard({ onSchedule, nextStep }: CoffeeMachineCardProps) {
   const [isPowerLoading, setIsPowerLoading] = useState(false)
   const [isBrewLoading, setIsBrewLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -121,6 +181,11 @@ export function CoffeeMachineCard({ onSchedule }: CoffeeMachineCardProps) {
               </div>
             )}
           </div>
+        )}
+
+        {/* Next step countdown */}
+        {nextStep && (
+          <CoffeeStepTimer info={nextStep} />
         )}
 
         {/* Brewing Animation Effect */}

@@ -398,13 +398,26 @@ export default function SmartHomeDashboard() {
                     nextScheduledTime={dishwasher.nextScheduledTime}
                   />
                 ))}
-                <CoffeeMachineCard onSchedule={() => handleOpenSchedule({
-                  haId: '9103117a-3163-4aa6-a4fb-b0a50acf832a',
-                  name: 'מכונת קפה',
-                  nameHe: 'מכונת קפה',
-                  type: 'CoffeeMaker',
-                  status: 'ready'
-                })} />
+                <CoffeeMachineCard
+                  nextStep={(() => {
+                    const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
+                    const upcoming = schedules
+                      .filter(s => s.appliance_id === COFFEE_ID && (s.status === 'pending' || s.status === 'processing'))
+                      .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime())[0];
+                    if (!upcoming) return null;
+                    const m = upcoming.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
+                    const stepName = m?.[1] || 'POWER_ON';
+                    if (stepName !== 'POWER_ON' && stepName !== 'PRESS' && stepName !== 'POWER_OFF') return null;
+                    return { step: stepName as 'POWER_ON' | 'PRESS' | 'POWER_OFF', targetTime: upcoming.scheduled_time };
+                  })()}
+                  onSchedule={() => handleOpenSchedule({
+                    haId: '9103117a-3163-4aa6-a4fb-b0a50acf832a',
+                    name: 'מכונת קפה',
+                    nameHe: 'מכונת קפה',
+                    type: 'CoffeeMaker',
+                    status: 'ready'
+                  })}
+                />
               </div>
             </section>
 
