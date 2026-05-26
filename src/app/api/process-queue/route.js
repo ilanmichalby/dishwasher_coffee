@@ -144,21 +144,13 @@ async function handleRequest(request) {
           console.log(`Step ${isBrewOnly ? 1 : 3}: Pressing coffee button via SwitchBot...`);
           await pressBot(switchbotDeviceId);
 
-          // 4. Wait for fallback (60 seconds)
-          console.log('Waiting 60 seconds for fallback press...');
-          await sleep(60000);
-
-          // 5. Fallback Press (SwitchBot)
-          console.log('Fallback press via SwitchBot...');
-          await pressBot(switchbotDeviceId);
-
           if (!isBrewOnly) {
-            // 6. Wait for coffee to finish (3 minutes)
-            console.log('Waiting 3 minutes for coffee to finish...');
+            // 4. Wait for coffee to finish brewing (3 minutes)
+            console.log('Step 4: Waiting 3 minutes for coffee to finish...');
             await sleep(180000);
 
-            // 7. Power OFF (Tuya / Smart Life Fingerbot)
-            console.log('Power OFF via Tuya Fingerbot to reset state...');
+            // 5. Power OFF (Tuya / Smart Life Fingerbot)
+            console.log('Step 5: Power OFF via Tuya Fingerbot to reset state...');
             await triggerFingerbot();
           }
           
