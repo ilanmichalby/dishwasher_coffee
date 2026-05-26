@@ -147,11 +147,9 @@ async function handleRequest(request) {
           const host = request.headers.get('host');
           const webhookUrl = `${protocol}://${host}/api/process-queue`;
 
+          // IMPORTANT: persist next-step state BEFORE the slow device call,
+          // so a Netlify timeout mid-call doesn't strand the row in 'processing'.
           if (step === 'POWER_ON') {
-            // 1. Power ON via Tuya Fingerbot, then reschedule PRESS in 60s
-            console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
-            await triggerFingerbot();
-
             const nextTime = new Date(Date.now() + 60000).toISOString();
             const { error: rescheduleErr } = await supabase
               .from('schedules')
@@ -159,24 +157,31 @@ async function handleRequest(request) {
               .eq('id', schedule.id);
             if (rescheduleErr) console.error('Coffee POWER_ON reschedule DB error:', rescheduleErr);
             const qres = await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
-            console.log(`Coffee step 1 done. Next PRESS at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
+            console.log(`Coffee step 1: scheduled PRESS at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
+
+            console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
+            await triggerFingerbot();
+
             results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS' });
             continue;
           }
 
           if (step === 'PRESS') {
-            // 2. Press coffee button via SwitchBot
-            console.log('Coffee step 2: Pressing coffee button via SwitchBot...');
-            await pressBot(switchbotDeviceId);
-
             if (!isBrewOnly) {
-              // Reschedule POWER_OFF in 3 minutes
+              // Persist POWER_OFF reschedule first
               const nextTime = new Date(Date.now() + 180000).toISOString();
               await supabase
                 .from('schedules')
                 .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=POWER_OFF]' })
                 .eq('id', schedule.id);
               await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+              console.log(`Coffee step 2: scheduled POWER_OFF at ${nextTime}.`);
+            }
+
+            console.log('Coffee step 2: Pressing coffee button via SwitchBot...');
+            await pressBot(switchbotDeviceId);
+
+            if (!isBrewOnly) {
               results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_OFF' });
               continue;
             }
