@@ -10,8 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Calendar, Star, History, CheckCircle2, XCircle, Clock, RefreshCw, Pencil, Trash2 } from "lucide-react"
-import type { ScheduledTask } from "@/app/page"
+import { Calendar, Star, History, CheckCircle2, XCircle, Clock, RefreshCw, Pencil, Trash2, ListChecks } from "lucide-react"
+import type { ScheduleEvent, ScheduledTask } from "@/app/page"
 
 interface ScheduleTableProps {
   schedules: ScheduledTask[]
@@ -21,6 +21,7 @@ interface ScheduleTableProps {
 
 export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProps) {
   const [showPast, setShowPast] = useState(false);
+  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
 
   const now = new Date();
 
@@ -35,6 +36,8 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
     if (s.rawDate && new Date(s.rawDate) >= now) return true;
     return false;
   });
+
+  const expandedSchedule = filteredSchedules.find(s => s.id === expandedScheduleId);
 
   const getStatusBadge = (status?: string, error?: string) => {
     switch(status) {
@@ -53,6 +56,33 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
       default:
         return <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/30 text-xs whitespace-nowrap"><Clock className="h-3 w-3 ml-1" /> ממתין</Badge>;
     }
+  }
+
+  const formatEventTime = (value: string) => {
+    return new Date(value).toLocaleTimeString('he-IL', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: 'Asia/Jerusalem'
+    });
+  }
+
+  const formatEventDetails = (event: ScheduleEvent) => {
+    const details = event.details || {};
+    const parts = [];
+
+    if (details.attempt) parts.push(`ניסיון ${details.attempt}${details.max_attempts ? `/${details.max_attempts}` : ''}`);
+    if (details.next_attempt) parts.push(`הבא: ניסיון ${details.next_attempt}`);
+    if (details.switchbot_status) parts.push(`SwitchBot ${details.switchbot_status}`);
+    if (details.switchbot_message) parts.push(details.switchbot_message);
+    if (details.next_step) parts.push(`השלב הבא: ${details.next_step}`);
+    if (details.next_time) {
+      parts.push(`בשעה ${new Date(details.next_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}`);
+    }
+    if (details.error_type) parts.push(details.error_type);
+    if (details.message) parts.push(details.message);
+
+    return parts.length > 0 ? parts.join(' · ') : '';
   }
 
   return (
@@ -117,6 +147,16 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-amber-400"
+                        onClick={() => setExpandedScheduleId(expandedScheduleId === schedule.id ? null : schedule.id)}
+                        title="פרטי ריצה"
+                        disabled={!schedule.events || schedule.events.length === 0}
+                      >
+                        <ListChecks className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-white"
                         onClick={() => onEdit?.(schedule)}
                       >
@@ -141,6 +181,34 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
             </TableBody>
           </Table>
         </div>
+
+        {expandedSchedule && (
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-white">פרטי ריצה</p>
+                <p className="text-xs text-muted-foreground">
+                  {expandedSchedule.applianceName} · {expandedSchedule.date} · {expandedSchedule.time}
+                </p>
+              </div>
+              <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                {expandedSchedule.events?.length || 0} אירועים
+              </Badge>
+            </div>
+            <div className="grid gap-2">
+              {expandedSchedule.events?.map((event) => {
+                const details = formatEventDetails(event);
+                return (
+                  <div key={event.id} className="grid grid-cols-[82px_minmax(180px,260px)_1fr] gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs">
+                    <span className="font-mono text-slate-400 tabular-nums">{formatEventTime(event.created_at)}</span>
+                    <span className="font-semibold text-slate-200">{event.event_type}</span>
+                    <span className="min-w-0 break-words text-slate-400">{details || '—'}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
         
         {filteredSchedules.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">

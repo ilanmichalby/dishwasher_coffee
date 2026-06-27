@@ -458,6 +458,7 @@
             <span class="tag ok">ממשק RTL</span>
             <span class="tag ok">כרטיסי מכשירים</span>
             <span class="tag ok">טבלת תזמונים</span>
+            <span class="tag ok">פרטי ריצה</span>
           </div>
         </article>
         <article class="card">
@@ -527,7 +528,7 @@
             <li>כרטיסי סיכום: מכשירים פעילים ותזמונים קרובים.</li>
             <li>כרטיס לכל מדיח עם מצב, תוכנית, התקדמות, זמן שנותר ותזמון הבא.</li>
             <li>כרטיס מכונת קפה עם פעולות ידניות, מצב תזמון מלא/חלקי וטיימר לשלב הבא כולל PRESS_RETRY.</li>
-            <li>טבלת תזמונים עם סטטוסים, עריכה, מחיקה והצגת היסטוריה.</li>
+            <li>טבלת תזמונים עם סטטוסים, עריכה, מחיקה, הצגת היסטוריה ופרטי ריצה מתוך schedule_events.</li>
             <li>אזור פעילות אחרונה מתוך תזמונים שהושלמו או נכשלו.</li>
             <li>גרסת הדפסה לתזמונים הקרובים בשלושת הימים הבאים.</li>
           </ul>
@@ -881,10 +882,10 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
               <td>schedule_events, process-queue/route.js</td>
             </tr>
             <tr>
-              <td>גבוהה</td>
+              <td>בוצע</td>
               <td>להציג schedule_events באפליקציה</td>
-              <td>כרגע הלוג המפורט נמצא ב-DB. כדאי להוסיף מסך/כפתור "פרטי ריצה" לכל תזמון, כדי לראות מיד אם SwitchBot החזיר statusCode שגוי או כמה לחיצות בוצעו.</td>
-              <td>page.tsx, schedule-table.tsx, API חדש ל-events</td>
+              <td>נוסף כפתור "פרטי ריצה" בטבלת התזמונים. הוא מציג את אירועי התזמון, זמני הריצה, ניסיונות SwitchBot, statusCode, שגיאות והשלב הבא.</td>
+              <td>page.tsx, schedule-table.tsx</td>
             </tr>
             <tr>
               <td>בוצע</td>
@@ -949,6 +950,11 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נוסף פאנל "פרטי ריצה" לטבלת התזמונים: הדשבורד שולף עד 500 אירועי schedule_events אחרונים, מצמיד אותם לתזמונים, ומציג אותם בלחיצה על אייקון ברשימת הפעולות.</td>
+              <td><span class="tag ok">בוצע</span></td>
+            </tr>
             <tr>
               <td>2026-06-27</td>
               <td>נוצר commit מקומי afacb10 בשם Harden coffee scheduling retries, הוחלף ה-remote ל-HTTPS עם המשתמש ilanmichalby, וה-commit נדחף בהצלחה ל-main ב-GitHub.</td>

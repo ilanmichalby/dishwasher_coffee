@@ -58,12 +58,22 @@ export interface ScheduledTask {
   isShabbat?: boolean;
   retry_count?: number;
   last_error?: string;
+  events?: ScheduleEvent[];
+}
+
+export interface ScheduleEvent {
+  id: string;
+  schedule_id: string;
+  event_type: string;
+  details?: Record<string, any>;
+  created_at: string;
 }
 
 export default function SmartHomeDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [schedules, setSchedules] = useState([]);
+  const [scheduleEvents, setScheduleEvents] = useState([]);
   const [dishwashers, setDishwashers] = useState([]);
   const [error, setError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -90,8 +100,15 @@ export default function SmartHomeDashboard() {
       .from('schedules')
       .select('*')
       .order('scheduled_time', { ascending: true });
+
+    const { data: eventData } = await supabase
+      .from('schedule_events')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
       
     if (scheduleData) setSchedules(scheduleData);
+    if (eventData) setScheduleEvents(eventData);
   };
 
   const fetchDishwashers = async () => {
@@ -289,6 +306,9 @@ export default function SmartHomeDashboard() {
     rawDate: s.scheduled_time,
     status: s.status || 'pending',
     last_error: s.last_error,
+    events: scheduleEvents
+      .filter(e => e.schedule_id === s.id)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
     program: s.program_key === 'coffee.full' ? 'קפה (מלא)' : s.program_key === 'coffee.brew_only' ? 'קפה (הכנה בלבד)' : s.program_key.split('.').pop(),
     program_key: s.program_key,
     isShabbat: (() => {
