@@ -407,8 +407,8 @@ export default function SmartHomeDashboard() {
                     if (!upcoming) return null;
                     const m = upcoming.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
                     const stepName = m?.[1] || 'POWER_ON';
-                    if (stepName !== 'POWER_ON' && stepName !== 'PRESS' && stepName !== 'POWER_OFF') return null;
-                    return { step: stepName as 'POWER_ON' | 'PRESS' | 'POWER_OFF', targetTime: upcoming.scheduled_time };
+                    if (stepName !== 'POWER_ON' && stepName !== 'PRESS' && stepName !== 'PRESS_RETRY' && stepName !== 'POWER_OFF') return null;
+                    return { step: stepName as 'POWER_ON' | 'PRESS' | 'PRESS_RETRY' | 'POWER_OFF', targetTime: upcoming.scheduled_time };
                   })()}
                   onSchedule={() => handleOpenSchedule({
                     haId: '9103117a-3163-4aa6-a4fb-b0a50acf832a',

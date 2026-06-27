@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>תמונת מצב - Dishwasher Coffee</title>
+  <style>
+    :root {
+      --bg: #101417;
+      --panel: #171d21;
+      --panel-2: #1f272d;
+      --line: #34414a;
+      --text: #f3f6f7;
+      --muted: #a7b3bb;
+      --soft: #d7dee2;
+      --blue: #5aa9e6;
+      --green: #55c595;
+      --amber: #e9b44c;
+      --red: #e76f6f;
+      --violet: #a78bfa;
+      --cyan: #67d3df;
+      --radius: 8px;
+      --shadow: 0 20px 55px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Arial, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(120deg, rgba(90, 169, 230, 0.08), transparent 32%),
+        linear-gradient(240deg, rgba(85, 197, 149, 0.06), transparent 38%),
+        var(--bg);
+      line-height: 1.6;
+    }
+
+    button, input, select { font: inherit; }
+
+    .shell {
+      width: min(1220px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      background: rgba(23, 29, 33, 0.86);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin-bottom: 0;
+      color: var(--soft);
+      font-size: 18px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: max-content;
+      padding: 10px 14px;
+      border: 1px solid rgba(85, 197, 149, 0.35);
+      border-radius: 999px;
+      color: #c9f6df;
+      background: rgba(85, 197, 149, 0.12);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .tabs {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 16px 0;
+      background: rgba(16, 20, 23, 0.94);
+      backdrop-filter: blur(10px);
+    }
+
+    .tab-button {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--muted);
+      background: var(--panel);
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: 160ms ease;
+    }
+
+    .tab-button:hover,
+    .tab-button.active {
+      color: var(--text);
+      border-color: rgba(90, 169, 230, 0.55);
+      background: #22303a;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(23, 29, 33, 0.9);
+    }
+
+    .card h2 {
+      margin-bottom: 14px;
+      font-size: 24px;
+    }
+
+    .card h3 {
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+
+    .metric {
+      min-height: 126px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .metric .value {
+      font-size: 40px;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .metric.blue { border-color: rgba(90, 169, 230, 0.45); }
+    .metric.green { border-color: rgba(85, 197, 149, 0.45); }
+    .metric.amber { border-color: rgba(233, 180, 76, 0.45); }
+    .metric.violet { border-color: rgba(167, 139, 250, 0.45); }
+
+    .section-title {
+      margin: 24px 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 22px;
+    }
+
+    .section-title::before {
+      content: "";
+      width: 5px;
+      height: 24px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #24303a;
+      color: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tag.ok { color: #c9f6df; border-color: rgba(85, 197, 149, 0.4); background: rgba(85, 197, 149, 0.11); }
+    .tag.warn { color: #ffe5a8; border-color: rgba(233, 180, 76, 0.4); background: rgba(233, 180, 76, 0.12); }
+    .tag.risk { color: #ffd0d0; border-color: rgba(231, 111, 111, 0.4); background: rgba(231, 111, 111, 0.12); }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 44px;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+    }
+
+    .bar-track {
+      height: 12px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #26313a;
+      border: 1px solid #36444e;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .bar-fill.green { background: var(--green); }
+    .bar-fill.amber { background: var(--amber); }
+    .bar-fill.violet { background: var(--violet); }
+
+    .flow {
+      display: grid;
+      gap: 12px;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .node {
+      position: relative;
+      min-height: 108px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+    }
+
+    .node:not(:last-child)::after {
+      content: "←";
+      position: absolute;
+      left: -18px;
+      top: 40%;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .node strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .timeline {
+      display: grid;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .timeline-marker {
+      width: 14px;
+      height: 14px;
+      margin-top: 6px;
+      border-radius: 50%;
+      border: 3px solid var(--blue);
+      background: var(--bg);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--soft);
+      background: #202930;
+      font-size: 13px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .code {
+      direction: ltr;
+      text-align: left;
+      white-space: pre-wrap;
+      padding: 14px;
+      border-radius: var(--radius);
+      background: #0d1114;
+      border: 1px solid #2d3942;
+      color: #dce7ec;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .callout {
+      border-right: 4px solid var(--amber);
+      background: rgba(233, 180, 76, 0.08);
+    }
+
+    .callout.good {
+      border-right-color: var(--green);
+      background: rgba(85, 197, 149, 0.08);
+    }
+
+    .callout.risk {
+      border-right-color: var(--red);
+      background: rgba(231, 111, 111, 0.08);
+    }
+
+    @media (max-width: 900px) {
+      .topbar,
+      .split { grid-template-columns: 1fr; display: grid; }
+      .grid.cols-4,
+      .grid.cols-3,
+      .grid.cols-2,
+      .flow-row { grid-template-columns: 1fr; }
+      .node:not(:last-child)::after { display: none; }
+      .bar-row { grid-template-columns: 92px 1fr 34px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Dishwasher Coffee · תמונת מצב מקומית</p>
+        <h1>מה כבר בנוי באפליקציה</h1>
+        <p class="lead">
+          האפליקציה היא דשבורד בית חכם לניהול שני מדיחים ומכונת קפה: חיבור Bosch/Home Connect,
+          תזמונים ולוג אירועים ב-Supabase, ביצוע אוטומטי דרך QStash, שליטה בקפה דרך Tuya ו-SwitchBot,
+          וממשק עברי עם תזמון ידני, טקסט וקול.
+        </p>
+      </div>
+      <div class="status-pill"><span class="dot"></span> שוכפל והותקן מקומית</div>
+    </header>
+
+    <nav class="tabs" aria-label="ניווט במסמך">
+      <button class="tab-button active" data-tab="summary">תקציר</button>
+      <button class="tab-button" data-tab="features">יכולות</button>
+      <button class="tab-button" data-tab="architecture">ארכיטקטורה</button>
+      <button class="tab-button" data-tab="flows">תהליכים</button>
+      <button class="tab-button" data-tab="data">נתונים ו-API</button>
+      <button class="tab-button" data-tab="status">מצב ותיקונים</button>
+    </nav>
+
+    <section id="summary" class="tab-panel active">
+      <div class="grid cols-4">
+        <article class="card metric blue">
+          <span class="muted">קבצי API</span>
+          <span class="value">7</span>
+          <span class="small muted">auth, devices, schedule, action, queue, NLP</span>
+        </article>
+        <article class="card metric green">
+          <span class="muted">קומפוננטות דשבורד</span>
+          <span class="value">10</span>
+          <span class="small muted">כרטיסים, טבלאות, sheets, פקודות קול</span>
+        </article>
+        <article class="card metric amber">
+          <span class="muted">טבלאות Supabase</span>
+          <span class="value">4</span>
+          <span class="small muted">auth, schedules, schedule_events, templates</span>
+        </article>
+        <article class="card metric violet">
+          <span class="muted">API handlers</span>
+          <span class="value">10</span>
+          <span class="small muted">GET, POST, PATCH, DELETE</span>
+        </article>
+      </div>
+
+      <h2 class="section-title">מה האפליקציה עושה כרגע</h2>
+      <div class="grid cols-3">
+        <article class="card">
+          <h3>דשבורד לבית</h3>
+          <p class="muted">
+            מציג מדיחים מחוברים, מצב פעולה, זמן שנותר, תזמונים קרובים, היסטוריית פעולות וכרטיס נפרד למכונת הקפה.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">ממשק RTL</span>
+            <span class="tag ok">כרטיסי מכשירים</span>
+            <span class="tag ok">טבלת תזמונים</span>
+          </div>
+        </article>
+        <article class="card">
+          <h3>תזמון וביצוע</h3>
+          <p class="muted">
+            תזמון נשמר ב-Supabase, נשלח ל-QStash כ-webhook עתידי, ומעובד דרך endpoint שמפעיל את המכשיר המתאים. פעולות queue חדשות נרשמות גם ל-schedule_events.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">יצירה</span>
+            <span class="tag ok">עריכה</span>
+            <span class="tag ok">מחיקה</span>
+            <span class="tag warn">דורש QStash</span>
+            <span class="tag ok">לוג אירועים</span>
+          </div>
+        </article>
+        <article class="card">
+          <h3>פקודות בעברית</h3>
+          <p class="muted">
+            יש Parser מקומי שמבין משפטים בעברית, מזהה מדיח חלבי/בשרי/קפה, תוכנית, יום ושעה, בלי שימוש ב-API חיצוני.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">טקסט</span>
+            <span class="tag ok">זיהוי קול בדפדפן</span>
+            <span class="tag ok">Presets לבדיקה</span>
+          </div>
+        </article>
+      </div>
+
+      <h2 class="section-title">מפת היקף</h2>
+      <div class="card">
+        <div class="bar-row">
+          <strong>Frontend</strong>
+          <div class="bar-track"><div class="bar-fill" style="width: 78%"></div></div>
+          <span>גבוה</span>
+        </div>
+        <div class="bar-row">
+          <strong>Scheduling</strong>
+          <div class="bar-track"><div class="bar-fill green" style="width: 82%"></div></div>
+          <span>גבוה</span>
+        </div>
+        <div class="bar-row">
+          <strong>Integrations</strong>
+          <div class="bar-track"><div class="bar-fill amber" style="width: 68%"></div></div>
+          <span>בינוני</span>
+        </div>
+        <div class="bar-row">
+          <strong>QA/Polish</strong>
+          <div class="bar-track"><div class="bar-fill violet" style="width: 38%"></div></div>
+          <span>נדרש</span>
+        </div>
+        <div class="legend">
+          <span><i style="background: var(--blue)"></i> בנוי בממשק</span>
+          <span><i style="background: var(--green)"></i> לוגיקה קיימת</span>
+          <span><i style="background: var(--amber)"></i> תלוי סביבה/חשבונות</span>
+          <span><i style="background: var(--violet)"></i> דורש תיקוני איכות</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="tab-panel">
+      <div class="grid cols-2">
+        <article class="card">
+          <h2>ממשק משתמש</h2>
+          <ul>
+            <li>מסך התחברות ל-Home Connect אם אין רשומת auth ב-Supabase.</li>
+            <li>כותרת עם תאריך ושעה באזור זמן Asia/Jerusalem.</li>
+            <li>כרטיסי סיכום: מכשירים פעילים ותזמונים קרובים.</li>
+            <li>כרטיס לכל מדיח עם מצב, תוכנית, התקדמות, זמן שנותר ותזמון הבא.</li>
+            <li>כרטיס מכונת קפה עם פעולות ידניות, מצב תזמון מלא/חלקי וטיימר לשלב הבא כולל PRESS_RETRY.</li>
+            <li>טבלת תזמונים עם סטטוסים, עריכה, מחיקה והצגת היסטוריה.</li>
+            <li>אזור פעילות אחרונה מתוך תזמונים שהושלמו או נכשלו.</li>
+            <li>גרסת הדפסה לתזמונים הקרובים בשלושת הימים הבאים.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>שליטה ותזמון</h2>
+          <ul>
+            <li>שליטה מיידית במדיח: הדלקה, כיבוי, תוכנית מהירה, עצירה.</li>
+            <li>שליטה מיידית בקפה: לחיצת Power דרך Tuya ולחיצת Brew דרך SwitchBot.</li>
+            <li>בתזמון קפה אוטומטי יש לחיצת SwitchBot נוספת דקה אחרי הלחיצה הראשונה, כ-fallback אם הלחיצה הראשונה לא הפעילה קפה בפועל.</li>
+            <li>תזמון ידני לפי תאריך, שעה ותוכנית.</li>
+            <li>Presets לזמני שבת, מוצאי שבת ובוקר יום חול.</li>
+            <li>עריכת תזמון קיים עם עדכון זמן ותוכנית.</li>
+            <li>מחיקת תזמון מ-Supabase.</li>
+            <li>כפתור ידני להפעלת תזמונים ממתינים עכשיו.</li>
+          </ul>
+        </article>
+      </div>
+
+      <h2 class="section-title">יכולות לפי מכשיר</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>מכשיר</th>
+              <th>זיהוי פנימי</th>
+              <th>יכולות קיימות</th>
+              <th>אינטגרציה</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>מדיח חלבי</td>
+              <td>401020522686007368</td>
+              <td>סטטוס, תוכניות זמינות, הדלקה, כיבוי, הפעלת תוכנית, תזמון</td>
+              <td>Bosch Home Connect</td>
+            </tr>
+            <tr>
+              <td>מדיח בשרי</td>
+              <td>403120522686006531</td>
+              <td>סטטוס, תוכניות זמינות, הדלקה, כיבוי, הפעלת תוכנית, תזמון</td>
+              <td>Bosch Home Connect</td>
+            </tr>
+            <tr>
+              <td>מכונת קפה</td>
+              <td>9103117a-3163-4aa6-a4fb-b0a50acf832a</td>
+              <td>הדלקה, הכנת קפה, לחיצת גיבוי, כיבוי, תזמון מלא, תזמון הכנה בלבד, מניעת תזמונים צפופים</td>
+              <td>Tuya Fingerbot + SwitchBot Bot</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="architecture" class="tab-panel">
+      <div class="card">
+        <h2>מפת מערכת</h2>
+        <div class="flow">
+          <div class="flow-row">
+            <div class="node">
+              <strong>Next.js UI</strong>
+              דשבורד, כרטיסים, טבלאות, Sheets, קלט קולי וטקסטואלי.
+            </div>
+            <div class="node">
+              <strong>API Routes</strong>
+              נקודות קצה לפעולות, תזמונים, OAuth, NLP ועיבוד תור.
+            </div>
+            <div class="node">
+              <strong>Supabase</strong>
+              אחסון tokens של Bosch ותזמונים עם סטטוסים ושגיאות.
+            </div>
+            <div class="node">
+              <strong>QStash</strong>
+              קריאה עתידית ל-process-queue בזמן המתוזמן.
+            </div>
+            <div class="node">
+              <strong>מכשירים</strong>
+              Bosch מדיחים, Tuya Fingerbot, SwitchBot Bot.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="section-title">שכבות בקוד</h2>
+      <div class="grid cols-3">
+        <article class="card">
+          <h3>UI</h3>
+          <p class="muted">src/app/page.tsx מרכז את הדשבורד, ממפה נתונים ומחבר בין קומפוננטות.</p>
+          <div class="tag-row">
+            <span class="tag">dashboard-header</span>
+            <span class="tag">dishwasher-card</span>
+            <span class="tag">coffee-machine-card</span>
+            <span class="tag">schedule-table</span>
+            <span class="tag">voice-command-bar</span>
+          </div>
+        </article>
+        <article class="card">
+          <h3>Server/API</h3>
+          <p class="muted">API routes מבצעים פעולות בפועל, יוצרים תזמונים, מעבדים queue ומנהלים OAuth.</p>
+          <div class="tag-row">
+            <span class="tag">/api/schedule</span>
+            <span class="tag">/api/action</span>
+            <span class="tag">/api/process-queue</span>
+            <span class="tag">/api/dishwashers</span>
+          </div>
+        </article>
+        <article class="card">
+          <h3>Integrations</h3>
+          <p class="muted">ספריות נפרדות לכל ספק: Bosch, Supabase, QStash, Tuya, SwitchBot ו-parser מקומי.</p>
+          <div class="tag-row">
+            <span class="tag">bosch.js</span>
+            <span class="tag">tuya.js</span>
+            <span class="tag">switchbot.js</span>
+            <span class="tag">qstash.js</span>
+            <span class="tag">nlpParser.js</span>
+          </div>
+        </article>
+      </div>
+
+      <h2 class="section-title">משתני סביבה נדרשים</h2>
+      <div class="code">NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+CRON_SECRET / NEXT_PUBLIC_CRON_SECRET
+QSTASH_TOKEN
+QSTASH_CURRENT_SIGNING_KEY
+QSTASH_NEXT_SIGNING_KEY
+HOME_CONNECT_CLIENT_ID
+HOME_CONNECT_CLIENT_SECRET
+HOME_CONNECT_REDIRECT_URI
+SWITCHBOT_TOKEN
+SWITCHBOT_SECRET
+SWITCHBOT_COFFEE_DEVICE_ID
+COFFEE_PRESS_ATTEMPTS
+COFFEE_PRESS_INTERVAL_MS
+COFFEE_POWER_OFF_DELAY_MS
+TUYA_CLIENT_ID
+TUYA_CLIENT_SECRET
+TUYA_FINGERBOT_DEVICE_ID
+SMARTTHINGS_TOKEN
+SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
+    </section>
+
+    <section id="flows" class="tab-panel">
+      <div class="split">
+        <article class="card">
+          <h2>תזמון מדיח</h2>
+          <div class="timeline">
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>1. בחירה בממשק</strong><p class="muted">משתמש בוחר מדיח, תאריך, שעה ותוכנית.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>2. שמירה</strong><p class="muted">POST /api/schedule שומר שורה ב-schedules עם status=pending.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>3. תזמון webhook</strong><p class="muted">QStash מקבל URL ל-/api/process-queue עם delay עד לזמן הרצוי.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>4. עיבוד</strong><p class="muted">המערכת מדליקה את המדיח, בודקת דלת/Remote Start/תוכניות זמינות, ואז מפעילה תוכנית.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>5. סיום</strong><p class="muted">השורה מסומנת completed או failed עם last_error.</p></div></div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>תזמון קפה מלא</h2>
+          <div class="timeline">
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_ON</strong><p class="muted">Tuya Fingerbot לוחץ על כפתור ההדלקה, ואז התזמון מוזז דקה קדימה.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>PRESS x5</strong><p class="muted">SwitchBot לוחץ על כפתור הכנת הקפה כמה פעמים בהפרש דקה. ברירת המחדל היא 5 לחיצות, וניתן לכוון דרך COFFEE_PRESS_ATTEMPTS ו-COFFEE_PRESS_INTERVAL_MS.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>SwitchBot validation</strong><p class="muted">כל פקודת SwitchBot חייבת להחזיר statusCode=100. אם לא, אותו ניסיון מתוזמן שוב ולא נספר כהתקדמות.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_OFF</strong><p class="muted">בתזמון מלא, Tuya Fingerbot לוחץ שוב לכיבוי רק אחרי סדרת הלחיצות, לפי COFFEE_POWER_OFF_DELAY_MS.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>מצב Brew Only</strong><p class="muted">מדלג על הדלקה וכיבוי, אבל עדיין מבצע את סדרת לחיצות הקפה.</p></div></div>
+          </div>
+        </article>
+      </div>
+
+      <h2 class="section-title">פקודת קול או טקסט</h2>
+      <div class="card">
+        <div class="flow-row">
+          <div class="node"><strong>משפט בעברית</strong>לדוגמה: קפה מחר בשש בבוקר</div>
+          <div class="node"><strong>parseText</strong>זיהוי מכשיר, תוכנית, תאריך ושעה</div>
+          <div class="node"><strong>תצוגת אישור</strong>המשתמש רואה מה פוענח לפני שליחה</div>
+          <div class="node"><strong>/api/schedule</strong>יצירת תזמון רגיל</div>
+          <div class="node"><strong>queue</strong>ביצוע בזמן</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="data" class="tab-panel">
+      <div class="grid cols-2">
+        <article class="card">
+          <h2>טבלאות Supabase</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>טבלה</th><th>תפקיד</th><th>עמודות מרכזיות</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>bosch_auth</td>
+                  <td>אחסון OAuth tokens של Home Connect</td>
+                  <td>access_token, refresh_token, expires_at</td>
+                </tr>
+                <tr>
+                  <td>schedules</td>
+                  <td>תזמוני מדיחים וקפה</td>
+                  <td>scheduled_time, program_key, appliance_id, status, retry_count, last_error</td>
+                </tr>
+                <tr>
+                  <td>schedule_events</td>
+                  <td>יומן אירועים מפורט לכל שלב עיבוד</td>
+                  <td>schedule_id, event_type, details, created_at</td>
+                </tr>
+                <tr>
+                  <td>templates</td>
+                  <td>תבניות תוכנית וזמן ברירת מחדל</td>
+                  <td>name, program_key, default_time_of_day, appliance_id</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>סטטוסים</h2>
+          <p class="muted">המערכת משתמשת בסטטוסים כדי להציג מצב, למנוע הרצות כפולות ולבנות היסטוריה.</p>
+          <div class="tag-row">
+            <span class="tag warn">pending</span>
+            <span class="tag">processing</span>
+            <span class="tag ok">completed</span>
+            <span class="tag risk">failed</span>
+          </div>
+          <p class="muted" style="margin-top: 16px">
+            יש גם מנגנון איפוס ל-processing ישן מעל שתי דקות, כדי להחזיר תזמון תקוע ל-pending.
+          </p>
+        </article>
+      </div>
+
+      <h2 class="section-title">יומן אירועים</h2>
+      <div class="card">
+        <h3>אירועי schedule_events שנכתבים מה-queue</h3>
+        <p class="muted">
+          טבלת schedule_events היא "קופסה שחורה" קלה: היא לא מחליפה את status/last_error, אלא מוסיפה ציר זמן מפורט שמאפשר להבין בדיעבד איזה שלב רץ, מה תוזמן הלאה, ואיפה היתה נפילה.
+        </p>
+        <div class="tag-row">
+          <span class="tag">schedule.processing</span>
+          <span class="tag">coffee.power_on.next_scheduled</span>
+          <span class="tag">coffee.power_on.success</span>
+          <span class="tag">coffee.press_retry.next_scheduled</span>
+          <span class="tag">coffee.press.success</span>
+          <span class="tag">coffee.power_off.next_scheduled</span>
+          <span class="tag">coffee.press_retry.success</span>
+          <span class="tag">coffee.power_off.success</span>
+          <span class="tag ok">schedule.completed</span>
+          <span class="tag risk">schedule.failed</span>
+        </div>
+      </div>
+
+      <h2 class="section-title">API endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>פעולות</th>
+              <th>תפקיד</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>/api/auth/bosch/login</td><td>GET</td><td>הפניה ל-OAuth של Home Connect</td></tr>
+            <tr><td>/api/auth/bosch/callback</td><td>GET</td><td>החלפת code ב-tokens ושמירה ב-Supabase</td></tr>
+            <tr><td>/api/dishwashers</td><td>GET</td><td>שליפת מדיחים, סטטוס ותוכניות זמינות</td></tr>
+            <tr><td>/api/schedule</td><td>POST, PATCH, DELETE</td><td>יצירה, עדכון ומחיקת תזמונים</td></tr>
+            <tr><td>/api/schedule/nlp</td><td>POST</td><td>פענוח טקסט דרך parser מקומי</td></tr>
+            <tr><td>/api/action</td><td>POST</td><td>פעולות מיידיות במדיחים ובקפה</td></tr>
+            <tr><td>/api/process-queue</td><td>GET, POST</td><td>עיבוד תזמונים שהגיע זמנם</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="status" class="tab-panel">
+      <div class="grid cols-3">
+        <article class="card callout good">
+          <h2>מוכן מקומית</h2>
+          <p class="muted">
+            הריפו שוכפל, התלויות הותקנו, משתני הסביבה נמשכו מ-Netlify, ושרת הפיתוח עולה על localhost:3000 עם תגובת 200.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">git clone</span>
+            <span class="tag ok">npm install</span>
+            <span class="tag ok">.env.local</span>
+            <span class="tag ok">next dev</span>
+          </div>
+        </article>
+
+        <article class="card callout good">
+          <h2>Netlify מחובר</h2>
+          <p class="muted">
+            התיקייה המקומית קושרה לאתר dishwasher-coffee ב-Netlify, ומשתני production נכתבו לקובץ .env.local מקומי שאינו מיועד ל-git.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">site linked</span>
+            <span class="tag ok">production env</span>
+            <span class="tag ok">.netlify ignored</span>
+          </div>
+        </article>
+
+        <article class="card callout good">
+          <h2>קפה עם fallback</h2>
+          <p class="muted">
+            אחרי אירוע שבת 27.06.2026 נוסף רצף לחיצות מאומת: ברירת המחדל היא 5 פקודות SwitchBot בהפרש דקה, ורק אחריהן מתוזמן כיבוי. בנוסף נוספה בדיקת statusCode של SwitchBot, כך ש-HTTP 200 עם שגיאת מכשיר לא ייחשב כהצלחה.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">5 לחיצות</span>
+            <span class="tag ok">SwitchBot statusCode</span>
+            <span class="tag ok">schedule_events</span>
+            <span class="tag ok">build עבר</span>
+          </div>
+        </article>
+
+        <article class="card callout risk">
+          <h2>דורש תיקונים</h2>
+          <p class="muted">
+            lint נכשל כרגע בגלל חוקי React hooks חדשים: גישה לפונקציות לפני הכרזה ו-setState סינכרוני בתוך effect.
+          </p>
+          <div class="tag-row">
+            <span class="tag risk">8 errors</span>
+            <span class="tag warn">1 warning</span>
+            <span class="tag warn">6 npm vulnerabilities</span>
+          </div>
+        </article>
+      </div>
+
+      <h2 class="section-title">תיקונים שכדאי לעשות לפני הרחבות</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>עדיפות</th>
+              <th>נושא</th>
+              <th>למה זה חשוב</th>
+              <th>קבצים רלוונטיים</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>בוצע</td>
+              <td>בדיקת תשובת SwitchBot אמיתית</td>
+              <td>הקוד כבר לא מסתפק ב-HTTP 200. אם גוף התשובה של SwitchBot מכיל statusCode שאינו 100, התזמון ייכשל/ינסה שוב ולא יסומן completed.</td>
+              <td>switchbot.js, process-queue/route.js</td>
+            </tr>
+            <tr>
+              <td>בוצע</td>
+              <td>Fallback לקפה</td>
+              <td>לחיצת SwitchBot שנייה מתוזמנת דקה אחרי הלחיצה הראשונה, כדי להציל מצב שבו ה-API החזיר הצלחה אבל האצבע לא הפעילה קפה בפועל.</td>
+              <td>process-queue/route.js, coffee-machine-card.tsx, page.tsx</td>
+            </tr>
+            <tr>
+              <td>בוצע</td>
+              <td>יומן אירועים מפורט</td>
+              <td>נוספה טבלת schedule_events ונוספו כתיבות best-effort מתוך ה-queue. לאחר הרצת ה-SQL ב-Supabase, אירועי הרצה חדשים יישמרו לניתוח בדיעבד.</td>
+              <td>supabase_schema.sql, update_schema.sql, process-queue/route.js</td>
+            </tr>
+            <tr>
+              <td>בוצע</td>
+              <td>יצירת .env.local אמיתי</td>
+              <td>נמשך מ-Netlify production. האפליקציה נטענת מקומית ומחזירה 200.</td>
+              <td>.env.local, .env.local.example, src/lib/supabase.js</td>
+            </tr>
+            <tr>
+              <td>גבוהה</td>
+              <td>תיקון lint ב-hooks</td>
+              <td>מונע build נקי ויכול להסתיר בעיות רינדור/התנהגות.</td>
+              <td>page.tsx, dashboard-header.tsx, schedule-sheet.tsx, voice-command-bar.tsx, use-mobile.ts</td>
+            </tr>
+            <tr>
+              <td>בינונית</td>
+              <td>בדיקת encoding בעברית</td>
+              <td>בחלק מפלטי הטרמינל הטקסט נראה כ-mojibake; כדאי לוודא שהקבצים נשמרים ומוצגים UTF-8.</td>
+              <td>constants.js, nlpParser.js, components/dashboard</td>
+            </tr>
+            <tr>
+              <td>בינונית</td>
+              <td>הקשחת אבטחה</td>
+              <td>NEXT_PUBLIC_CRON_SECRET נחשף ללקוח; עדיף להפריד פעולות ידניות מאימות server-side.</td>
+              <td>page.tsx, process-queue/route.js</td>
+            </tr>
+            <tr>
+              <td>בינונית</td>
+              <td>בדיקת npm audit</td>
+              <td>יש 6 vulnerabilities לפי npm install.</td>
+              <td>package-lock.json</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="section-title">יומן שינויים מקומי</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>תאריך</th>
+              <th>שינוי</th>
+              <th>מצב</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נמשכו Netlify function logs היסטוריים לחלון 12:20-12:44 שעון ישראל. הם מראים POWER_ON, PRESS ו-POWER_OFF בשני התזמונים, ללא warn/error. לכן התור, QStash ו-Netlify לא היו נקודת הכשל.</td>
+              <td><span class="tag ok">לוגים נמצאו</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נמצא פגם טיפול בשגיאות SwitchBot: הקוד בדק רק HTTP response.ok ולא בדק statusCode בגוף התשובה. תוקן כך שרק statusCode=100 נחשב הצלחה, ושגיאות SwitchBot נשמרות ומקבלות retry.</td>
+              <td><span class="tag ok">תוקן</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>חקירת אירוע הקפה של שבת: נמצאו שתי רשומות קפה שסומנו completed ללא last_error. זמני הסיום שנשארו ב-DB הם 12:24 ו-12:44 שעון ישראל, כלומר האפליקציה חשבה שהרצף הצליח אף שלא היה קפה בפועל.</td>
+              <td><span class="tag ok">נותח</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נוסף שלב PRESS_RETRY לתזמון קפה: לאחר PRESS רגיל, התזמון עובר לדקה קדימה ומבצע לחיצת SwitchBot נוספת לפני הכיבוי.</td>
+              <td><span class="tag ok">בוצע</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נוספה טבלת schedule_events לסכמה ולשדרוג DB, ונוספו אירועי queue מפורטים סביב הדלקה, לחיצה, לחיצת גיבוי, כיבוי, השלמה וכישלון.</td>
+              <td><span class="tag ok">בוצע וה-SQL הורץ</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>אימות לאחר שינוי: npm run build עבר בהצלחה. npm run lint עדיין נכשל על בעיות React hooks קיימות שאינן קשורות לתיקון הקפה.</td>
+              <td><span class="tag warn">build עבר</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>משיכת משתני סביבה מ-Netlify production אל .env.local, קישור התיקייה לאתר dishwasher-coffee, ועדכון .gitignore להחרגת .netlify.</td>
+              <td><span class="tag ok">בוצע</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>אימות הרצה מקומית לאחר טעינת משתני הסביבה: שרת Next.js על localhost:3000 והעמוד הראשי מחזיר 200.</td>
+              <td><span class="tag ok">אומת</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>החלטת עבודה: לעדכן את app-overview.html בכל שינוי עתידי בפרויקט.</td>
+              <td><span class="tag ok">פעיל</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="section-title">קובץ זה</h2>
+      <div class="card">
+        <p class="muted">
+          הקובץ הוא סטטי ועצמאי, אפשר לפתוח אותו ישירות בדפדפן. הוא לא נוגע באפליקציה עצמה ולא דורש שרת.
+        </p>
+        <div class="code">C:\Users\user10\Documents\Coding\dishwasher coffee\app-overview.html</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const buttons = Array.from(document.querySelectorAll(".tab-button"));
+    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+    function activateTab(tabId) {
+      buttons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === tabId);
+      });
+      panels.forEach((panel) => {
+        panel.classList.toggle("active", panel.id === tabId);
+      });
+      history.replaceState(null, "", "#" + tabId);
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => activateTab(button.dataset.tab));
+    });
+
+    const initial = location.hash.replace("#", "");
+    if (initial && document.getElementById(initial)) {
+      activateTab(initial);
+    }
+  </script>
+</body>
+</html>

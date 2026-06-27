@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Coffee, Power, AlertCircle, CheckCircle2, Loader2, Info, Calendar, Settings2, Timer } from "lucide-react"
 
 interface CoffeeStepInfo {
-  step: 'POWER_ON' | 'PRESS' | 'POWER_OFF';
+  step: 'POWER_ON' | 'PRESS' | 'PRESS_RETRY' | 'POWER_OFF';
   targetTime: string;
 }
 
@@ -25,6 +25,12 @@ const STEP_STYLES: Record<CoffeeStepInfo['step'], { label: string; icon: string;
   },
   PRESS: {
     label: 'לחיצה בעוד', icon: '☕',
+    box: 'bg-amber-500/10 border-amber-500/30',
+    icon_cls: 'text-amber-400',
+    text: 'text-amber-300',
+  },
+  PRESS_RETRY: {
+    label: 'לחיצת גיבוי בעוד', icon: '☕',
     box: 'bg-amber-500/10 border-amber-500/30',
     icon_cls: 'text-amber-400',
     text: 'text-amber-300',

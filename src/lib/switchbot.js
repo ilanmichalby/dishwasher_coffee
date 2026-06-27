@@ -52,7 +52,16 @@ export async function sendSwitchBotCommand(deviceId, command, parameter = 'defau
     throw new Error(`SwitchBot API error: ${response.status} - ${JSON.stringify(errorData)}`);
   }
 
-  return await response.json();
+  const data = await response.json();
+
+  if (data.statusCode !== 100) {
+    const err = new Error(`SwitchBot command failed: statusCode=${data.statusCode}, message=${data.message || 'unknown'}`);
+    err.errorType = 'SWITCHBOT_COMMAND_FAILED';
+    err.switchbotResponse = data;
+    throw err;
+  }
+
+  return data;
 }
 
 /**

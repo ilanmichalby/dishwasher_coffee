@@ -14,6 +14,33 @@ const receiver = new Receiver({
 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
+const DISHWASHER_MAX_RETRIES = 5;
+const COFFEE_MAX_RETRIES = 20;
+
+function envNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const COFFEE_PRESS_ATTEMPTS = envNumber('COFFEE_PRESS_ATTEMPTS', 5);
+const COFFEE_PRESS_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
+const COFFEE_POWER_OFF_DELAY_MS = envNumber('COFFEE_POWER_OFF_DELAY_MS', 120000);
+
+async function logScheduleEvent(scheduleId, eventType, details = {}) {
+  const { error } = await supabase
+    .from('schedule_events')
+    .insert([{ schedule_id: scheduleId, event_type: eventType, details }]);
+
+  if (error) {
+    console.warn(`Schedule event log skipped (${eventType}):`, error.message);
+  }
+}
+
+function getCoffeePressAttempt(schedule) {
+  const attemptMatch = schedule.last_error?.match(/\[COFFEE_PRESS_ATTEMPT=(\d+)\]/);
+  return attemptMatch ? Number(attemptMatch[1]) : 1;
+}
 
 // Force dynamic execution for this route (no caching)
 export const dynamic = 'force-dynamic';
@@ -74,7 +101,7 @@ async function handleRequest(request) {
       .select('*')
       .eq('status', 'pending')
       .lte('scheduled_time', now)
-      .lt('retry_count', 5); // Max 5 retries
+      .lt('retry_count', COFFEE_MAX_RETRIES);
 
     if (dbError) {
       console.error('Error fetching schedules:', dbError);
@@ -86,8 +113,8 @@ async function handleRequest(request) {
     }
 
     // 2. Split schedules: coffee vs dishwasher
-    const coffeeSchedules = pendingSchedules.filter(s => s.appliance_id === '9103117a-3163-4aa6-a4fb-b0a50acf832a');
-    const dishwasherSchedules = pendingSchedules.filter(s => s.appliance_id !== '9103117a-3163-4aa6-a4fb-b0a50acf832a');
+    const coffeeSchedules = pendingSchedules.filter(s => s.appliance_id === COFFEE_ID);
+    const dishwasherSchedules = pendingSchedules.filter(s => s.appliance_id !== COFFEE_ID && s.retry_count < DISHWASHER_MAX_RETRIES);
 
     // 3. Fetch dishwashers only if there are dishwasher schedules
     let dishwashers = [];
@@ -132,15 +159,21 @@ async function handleRequest(request) {
         const dishwasherName = APPLIANCE_NAMES[targetHaId] || targetHaId;
         
         console.log(`Attempting to start schedule ${schedule.id} on ${dishwasherName}...`);
+        await logScheduleEvent(schedule.id, 'schedule.processing', {
+          appliance_id: targetHaId,
+          program_key: schedule.program_key,
+          scheduled_time: schedule.scheduled_time,
+        });
         
         // Call the appropriate API based on the device type/ID
-        if (targetHaId === '9103117a-3163-4aa6-a4fb-b0a50acf832a') {
+        if (targetHaId === COFFEE_ID) {
           const isBrewOnly = schedule.program_key === 'coffee.brew_only';
           const switchbotDeviceId = process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498';
 
           // Determine current step from marker in last_error; default = first step.
           const stepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-          const step = stepMatch ? stepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+          const rawStep = stepMatch ? stepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+          const step = rawStep === 'PRESS_RETRY' ? 'PRESS' : rawStep;
           console.log(`COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) step=${step} for ${dishwasherName}...`);
 
           const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
@@ -153,43 +186,75 @@ async function handleRequest(request) {
             const nextTime = new Date(Date.now() + 60000).toISOString();
             const { error: rescheduleErr } = await supabase
               .from('schedules')
-              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
+              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS][COFFEE_PRESS_ATTEMPT=1]' })
               .eq('id', schedule.id);
             if (rescheduleErr) console.error('Coffee POWER_ON reschedule DB error:', rescheduleErr);
             const qres = await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
             console.log(`Coffee step 1: scheduled PRESS at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
+            await logScheduleEvent(schedule.id, 'coffee.power_on.next_scheduled', { next_step: 'PRESS', next_time: nextTime });
 
             console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
             await triggerFingerbot();
+            await logScheduleEvent(schedule.id, 'coffee.power_on.success');
 
             results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS' });
             continue;
           }
 
           if (step === 'PRESS') {
+            const pressAttempt = getCoffeePressAttempt(schedule);
+            console.log(`Coffee press attempt ${pressAttempt}/${COFFEE_PRESS_ATTEMPTS}: Pressing coffee button via SwitchBot...`);
+            const switchbotResult = await pressBot(switchbotDeviceId);
+            await logScheduleEvent(schedule.id, 'coffee.press.success', {
+              device_id: switchbotDeviceId,
+              attempt: pressAttempt,
+              max_attempts: COFFEE_PRESS_ATTEMPTS,
+              switchbot_status: switchbotResult?.statusCode,
+              switchbot_message: switchbotResult?.message,
+            });
+
+            if (pressAttempt < COFFEE_PRESS_ATTEMPTS) {
+              const nextAttempt = pressAttempt + 1;
+              const nextTime = new Date(Date.now() + COFFEE_PRESS_INTERVAL_MS).toISOString();
+              await supabase
+                .from('schedules')
+                .update({ status: 'pending', scheduled_time: nextTime, last_error: `[COFFEE_STEP=PRESS][COFFEE_PRESS_ATTEMPT=${nextAttempt}]` })
+                .eq('id', schedule.id);
+              await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+              console.log(`Coffee press attempt ${pressAttempt}: scheduled PRESS attempt ${nextAttempt} at ${nextTime}.`);
+              await logScheduleEvent(schedule.id, 'coffee.press.next_scheduled', {
+                next_step: 'PRESS',
+                next_attempt: nextAttempt,
+                next_time: nextTime,
+              });
+
+              results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS', attempt: nextAttempt });
+              continue;
+            }
+
             if (!isBrewOnly) {
-              // Persist POWER_OFF reschedule first
-              const nextTime = new Date(Date.now() + 180000).toISOString();
+              const nextTime = new Date(Date.now() + COFFEE_POWER_OFF_DELAY_MS).toISOString();
               await supabase
                 .from('schedules')
                 .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=POWER_OFF]' })
                 .eq('id', schedule.id);
               await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
-              console.log(`Coffee step 2: scheduled POWER_OFF at ${nextTime}.`);
-            }
+              console.log(`Coffee press attempts completed: scheduled POWER_OFF at ${nextTime}.`);
+              await logScheduleEvent(schedule.id, 'coffee.power_off.next_scheduled', {
+                next_step: 'POWER_OFF',
+                next_time: nextTime,
+                completed_press_attempts: pressAttempt,
+              });
 
-            console.log('Coffee step 2: Pressing coffee button via SwitchBot...');
-            await pressBot(switchbotDeviceId);
-
-            if (!isBrewOnly) {
               results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_OFF' });
               continue;
             }
-            // brew_only: fall through to mark completed
+            // brew_only: fall through to mark completed after the press series
           } else if (step === 'POWER_OFF') {
             // 3. Power OFF via Tuya Fingerbot
             console.log('Coffee step 3: Power OFF via Tuya Fingerbot...');
             await triggerFingerbot();
+            await logScheduleEvent(schedule.id, 'coffee.power_off.success');
             // fall through to mark completed
           }
 
@@ -291,27 +356,61 @@ async function handleRequest(request) {
           .from('schedules')
           .update({ status: 'completed', last_error: null })
           .eq('id', schedule.id);
+        await logScheduleEvent(schedule.id, 'schedule.completed');
           
         results.push({ id: schedule.id, status: 'completed' });
 
       } catch (error) {
         const errorType = error.errorType || 'UNKNOWN';
         console.error(`Failed to execute schedule ${schedule.id} [${errorType}]:`, error.message);
+        await logScheduleEvent(schedule.id, 'schedule.failed', {
+          error_type: errorType,
+          message: error.message,
+          switchbot_response: error.switchbotResponse,
+        });
 
         const newRetryCount = schedule.retry_count + 1;
         const isFatal = errorType === 'DOOR_OPEN' || errorType === 'REMOTE_START_DISABLED';
+        const maxRetries = schedule.appliance_id === COFFEE_ID ? COFFEE_MAX_RETRIES : DISHWASHER_MAX_RETRIES;
         // Fatal errors (door open, no remote start) don't benefit from retrying — mark failed immediately
-        const newStatus = isFatal || newRetryCount >= 5 ? 'failed' : 'pending';
+        const newStatus = isFatal || newRetryCount >= maxRetries ? 'failed' : 'pending';
 
         // Save structured error info to DB for dashboard display
         const logMessage = `[${new Date().toISOString()}] [${errorType}] ${error.message}`;
+        const updates = {
+          retry_count: newRetryCount,
+          last_error: logMessage,
+          status: newStatus
+        };
+
+        if (
+          schedule.appliance_id === COFFEE_ID &&
+          errorType === 'SWITCHBOT_COMMAND_FAILED' &&
+          newStatus === 'pending'
+        ) {
+          const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
+          const currentStep = currentStepMatch ? currentStepMatch[1] : 'PRESS';
+          const currentAttempt = getCoffeePressAttempt(schedule);
+          const retryTime = new Date(Date.now() + COFFEE_PRESS_INTERVAL_MS).toISOString();
+
+          updates.scheduled_time = retryTime;
+          updates.last_error = `[COFFEE_STEP=${currentStep}][COFFEE_PRESS_ATTEMPT=${currentAttempt}] ${logMessage}`;
+
+          const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+          const host = request.headers.get('host');
+          const webhookUrl = `${protocol}://${host}/api/process-queue`;
+          await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_switchbot_retry' });
+          await logScheduleEvent(schedule.id, 'coffee.switchbot.retry_scheduled', {
+            step: currentStep,
+            attempt: currentAttempt,
+            next_time: retryTime,
+            retry_count: newRetryCount,
+          });
+        }
+
         await supabase
           .from('schedules')
-          .update({ 
-            retry_count: newRetryCount,
-            last_error: logMessage,
-            status: newStatus
-          })
+          .update(updates)
           .eq('id', schedule.id);
           
         results.push({ id: schedule.id, status: newStatus, error: error.message, errorType });

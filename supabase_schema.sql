@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS schedules (
     last_error TEXT
 );
 
+-- 3. Create schedule_events table (Detailed execution log)
+CREATE TABLE IF NOT EXISTS schedule_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    schedule_id UUID REFERENCES schedules(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 3. Create templates table
 CREATE TABLE IF NOT EXISTS templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
