@@ -819,12 +819,13 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
         <article class="card callout good">
           <h2>Netlify מחובר</h2>
           <p class="muted">
-            התיקייה המקומית קושרה לאתר dishwasher-coffee ב-Netlify, ומשתני production נכתבו לקובץ .env.local מקומי שאינו מיועד ל-git.
+            התיקייה המקומית קושרה לאתר dishwasher-coffee ב-Netlify, משתני production נכתבו לקובץ .env.local מקומי שאינו מיועד ל-git, וה-commit האחרון נדחף ל-main ב-GitHub.
           </p>
           <div class="tag-row">
             <span class="tag ok">site linked</span>
             <span class="tag ok">production env</span>
             <span class="tag ok">.netlify ignored</span>
+            <span class="tag ok">git push ok</span>
           </div>
         </article>
 
@@ -838,6 +839,7 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             <span class="tag ok">SwitchBot statusCode</span>
             <span class="tag ok">schedule_events</span>
             <span class="tag ok">build עבר</span>
+            <span class="tag ok">commit afacb10</span>
           </div>
         </article>
 
@@ -867,6 +869,24 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
           </thead>
           <tbody>
             <tr>
+              <td>דחוף</td>
+              <td>לוודא Deploy מ-GitHub ל-Netlify</td>
+              <td>התיקון נדחף ל-main, אבל פריסה ישירה מה-CLI נכשלה קודם בשלב publish של Netlify. צריך לוודא שה-build האוטומטי מה-push עבר ושהפונקציה בפרודקשן כוללת את רצף הקפה החדש.</td>
+              <td>Netlify deploys, /api/process-queue</td>
+            </tr>
+            <tr>
+              <td>דחוף</td>
+              <td>בדיקת תרגיל יבש לקפה לפני שבת</td>
+              <td>בלי חומרה חדשה, הדרך הכי טובה להקטין סיכון היא להריץ תזמון קפה קצר ביום חול ולוודא ב-schedule_events שיש 5 אירועי coffee.press.success עם statusCode=100 ואז POWER_OFF.</td>
+              <td>schedule_events, process-queue/route.js</td>
+            </tr>
+            <tr>
+              <td>גבוהה</td>
+              <td>להציג schedule_events באפליקציה</td>
+              <td>כרגע הלוג המפורט נמצא ב-DB. כדאי להוסיף מסך/כפתור "פרטי ריצה" לכל תזמון, כדי לראות מיד אם SwitchBot החזיר statusCode שגוי או כמה לחיצות בוצעו.</td>
+              <td>page.tsx, schedule-table.tsx, API חדש ל-events</td>
+            </tr>
+            <tr>
               <td>בוצע</td>
               <td>בדיקת תשובת SwitchBot אמיתית</td>
               <td>הקוד כבר לא מסתפק ב-HTTP 200. אם גוף התשובה של SwitchBot מכיל statusCode שאינו 100, התזמון ייכשל/ינסה שוב ולא יסומן completed.</td>
@@ -893,7 +913,7 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             <tr>
               <td>גבוהה</td>
               <td>תיקון lint ב-hooks</td>
-              <td>מונע build נקי ויכול להסתיר בעיות רינדור/התנהגות.</td>
+              <td>לא חוסם build כרגע, אבל משאיר רעש שמקשה לזהות רגרסיות אמיתיות לפני שבת.</td>
               <td>page.tsx, dashboard-header.tsx, schedule-sheet.tsx, voice-command-bar.tsx, use-mobile.ts</td>
             </tr>
             <tr>
@@ -929,6 +949,16 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>2026-06-27</td>
+              <td>נוצר commit מקומי afacb10 בשם Harden coffee scheduling retries, הוחלף ה-remote ל-HTTPS עם המשתמש ilanmichalby, וה-commit נדחף בהצלחה ל-main ב-GitHub.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-06-27</td>
+              <td>ניסיונות deploy ישיר דרך Netlify CLI נכשלו בשלב Failed publishing static content, למרות ש-npm run build עבר. לכן ההמלצה היא לוודא את הפריסה האוטומטית מ-GitHub.</td>
+              <td><span class="tag warn">לבדוק Netlify</span></td>
+            </tr>
             <tr>
               <td>2026-06-27</td>
               <td>נמשכו Netlify function logs היסטוריים לחלון 12:20-12:44 שעון ישראל. הם מראים POWER_ON, PRESS ו-POWER_OFF בשני התזמונים, ללא warn/error. לכן התור, QStash ו-Netlify לא היו נקודת הכשל.</td>
