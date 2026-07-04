@@ -1,67 +1,124 @@
-import { supabase } from './supabase';
+import { supabaseAdmin } from './supabase-admin';
 
 const API_URL = process.env.HOME_CONNECT_API_URL || 'https://api.home-connect.com';
 
-/**
- * Gets a valid access token, refreshing it if necessary.
- */
-export async function getValidAccessToken() {
-  const { data, error } = await supabase
+// Refresh whenever less than 10 minutes remain — a schedule run that starts
+// just before expiry must never hit the Bosch API with a dead token.
+const REFRESH_WINDOW_MS = 10 * 60 * 1000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchAuthRow() {
+  const { data, error } = await supabaseAdmin
     .from('bosch_auth')
     .select('*')
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
+    throw new Error(`Failed to read Bosch auth from DB: ${error.message}`);
+  }
+  return data;
+}
+
+async function requestTokenRefresh(refreshToken) {
+  const tokenResponse = await fetch(`${API_URL}/security/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.HOME_CONNECT_CLIENT_ID,
+      client_secret: process.env.HOME_CONNECT_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const errBody = await tokenResponse.json().catch(() => ({}));
+    console.error('Bosch token refresh failed:', tokenResponse.status, errBody);
+    const err = new Error(`Failed to refresh Bosch token (${tokenResponse.status}): ${errBody.error || 'unknown'}`);
+    err.invalidGrant = errBody.error === 'invalid_grant';
+    throw err;
+  }
+
+  return tokenResponse.json();
+}
+
+// Home Connect rotates the refresh token on every refresh, so losing the new
+// one to a transient DB error would force a manual re-login. Retry the save.
+async function saveRefreshedTokens(row, tokenData) {
+  const newExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
+  const updates = {
+    access_token: tokenData.access_token,
+    refresh_token: tokenData.refresh_token,
+    expires_at: newExpiresAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Conditional on the old refresh_token so a concurrent refresher's newer
+    // tokens are never overwritten by this (equally valid) result.
+    const { data, error } = await supabaseAdmin
+      .from('bosch_auth')
+      .update(updates)
+      .eq('id', row.id)
+      .eq('refresh_token', row.refresh_token)
+      .select('id');
+
+    if (!error) {
+      if (!data || data.length === 0) {
+        console.log('Bosch tokens were already refreshed by a concurrent request — keeping stored tokens.');
+      }
+      return;
+    }
+
+    console.error(`Failed to save refreshed Bosch tokens (attempt ${attempt}/3):`, error.message);
+    if (attempt < 3) await sleep(500 * attempt);
+  }
+
+  // Don't fail the current run — the in-memory token is valid — but future
+  // runs may need a re-login, so shout about it in the logs.
+  console.error('CRITICAL: refreshed Bosch tokens could not be persisted. The stored refresh token may now be invalid — re-login might be required.');
+}
+
+/**
+ * Gets a valid access token, refreshing it if necessary.
+ * Safe to call from concurrent invocations.
+ */
+export async function getValidAccessToken() {
+  const row = await fetchAuthRow();
+
+  if (!row) {
     throw new Error('No Bosch authentication found. Please login first.');
   }
 
-  const { access_token, refresh_token, expires_at, id } = data;
-  const expiresAtDate = new Date(expires_at);
-  const now = new Date();
-
-  // If token expires in less than 5 minutes, refresh it
-  if (expiresAtDate.getTime() - now.getTime() < 5 * 60 * 1000) {
-    console.log('Token expired or expiring soon, refreshing...');
-    const clientId = process.env.HOME_CONNECT_CLIENT_ID;
-    const clientSecret = process.env.HOME_CONNECT_CLIENT_SECRET;
-
-    const tokenResponse = await fetch(`${API_URL}/security/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'refresh_token',
-        refresh_token: refresh_token,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      const err = await tokenResponse.json();
-      console.error('Failed to refresh token', err);
-      throw new Error('Failed to refresh Bosch token');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const newExpiresAt = new Date();
-    newExpiresAt.setSeconds(newExpiresAt.getSeconds() + tokenData.expires_in);
-
-    // Update in database
-    await supabase
-      .from('bosch_auth')
-      .update({
-        access_token: tokenData.access_token,
-        refresh_token: tokenData.refresh_token,
-        expires_at: newExpiresAt.toISOString()
-      })
-      .eq('id', id);
-
-    return tokenData.access_token;
+  const msLeft = new Date(row.expires_at).getTime() - Date.now();
+  if (msLeft > REFRESH_WINDOW_MS) {
+    return row.access_token;
   }
 
-  return access_token;
+  console.log(`Bosch token expires in ${Math.round(msLeft / 1000)}s — refreshing...`);
+
+  try {
+    const tokenData = await requestTokenRefresh(row.refresh_token);
+    await saveRefreshedTokens(row, tokenData);
+    return tokenData.access_token;
+  } catch (refreshError) {
+    // A concurrent invocation may have refreshed first, rotating the refresh
+    // token we just tried to use. Re-read — if the stored tokens are newer
+    // and valid, use them instead of failing.
+    const fresh = await fetchAuthRow();
+    if (
+      fresh &&
+      fresh.refresh_token !== row.refresh_token &&
+      new Date(fresh.expires_at).getTime() > Date.now()
+    ) {
+      console.log('Bosch token was refreshed by a concurrent request — using stored token.');
+      return fresh.access_token;
+    }
+    throw refreshError;
+  }
 }
 
 /**

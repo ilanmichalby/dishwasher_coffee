@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms, getDishwasherStatus } from '@/lib/bosch';
 import { triggerFingerbot } from '@/lib/tuya';
 import { pressBot } from '@/lib/switchbot';
@@ -23,8 +23,7 @@ function envNumber(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-const COFFEE_PRESS_ATTEMPTS = envNumber('COFFEE_PRESS_ATTEMPTS', 5);
-const COFFEE_PRESS_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
+const COFFEE_PRESS_RETRY_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
 const COFFEE_POWER_OFF_DELAY_MS = envNumber('COFFEE_POWER_OFF_DELAY_MS', 120000);
 
 async function logScheduleEvent(scheduleId, eventType, details = {}) {
@@ -35,11 +34,6 @@ async function logScheduleEvent(scheduleId, eventType, details = {}) {
   if (error) {
     console.warn(`Schedule event log skipped (${eventType}):`, error.message);
   }
-}
-
-function getCoffeePressAttempt(schedule) {
-  const attemptMatch = schedule.last_error?.match(/\[COFFEE_PRESS_ATTEMPT=(\d+)\]/);
-  return attemptMatch ? Number(attemptMatch[1]) : 1;
 }
 
 // Force dynamic execution for this route (no caching)
@@ -84,8 +78,12 @@ async function handleRequest(request) {
   }
 
   try {
-    // 0. Cleanup: reset stuck 'processing' rows older than 2 minutes back to 'pending'
-    // (covers cases where a previous run timed out mid-step on Netlify)
+    // 0. Cleanup: reset stuck 'processing' rows back to 'pending'
+    // (covers cases where a previous run timed out mid-step on Netlify).
+    // The claim below bumps scheduled_time to the claim moment, so this only
+    // catches rows claimed >2 minutes ago — NOT rows another invocation
+    // claimed seconds ago whose original schedule time is old. (That race is
+    // what caused the duplicate 02:00 runs.)
     const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     await supabase
       .from('schedules')
@@ -141,10 +139,12 @@ async function handleRequest(request) {
     // 4. Process each schedule
     for (const schedule of allSchedules) {
       try {
-        // Mark as processing immediately to prevent duplicate runs (atomic check)
+        // Mark as processing immediately to prevent duplicate runs (atomic check).
+        // scheduled_time is bumped to "now" so the stuck-row cleanup measures
+        // time since the claim, not since the original schedule time.
         const { data: updated, error: updateError } = await supabase
           .from('schedules')
-          .update({ status: 'processing' })
+          .update({ status: 'processing', scheduled_time: new Date().toISOString() })
           .eq('id', schedule.id)
           .eq('status', 'pending')
           .select();
@@ -186,7 +186,7 @@ async function handleRequest(request) {
             const nextTime = new Date(Date.now() + 60000).toISOString();
             const { error: rescheduleErr } = await supabase
               .from('schedules')
-              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS][COFFEE_PRESS_ATTEMPT=1]' })
+              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
               .eq('id', schedule.id);
             if (rescheduleErr) console.error('Coffee POWER_ON reschedule DB error:', rescheduleErr);
             const qres = await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
@@ -202,54 +202,40 @@ async function handleRequest(request) {
           }
 
           if (step === 'PRESS') {
-            const pressAttempt = getCoffeePressAttempt(schedule);
-            console.log(`Coffee press attempt ${pressAttempt}/${COFFEE_PRESS_ATTEMPTS}: Pressing coffee button via SwitchBot...`);
+            // Exactly ONE press. Every extra press = an extra (wasted) cup.
+            // Persist the next step BEFORE the slow SwitchBot call so a
+            // Netlify timeout or QStash retry can never trigger a second
+            // press. If the API call itself fails, the catch below reverts
+            // the row to PRESS for a retry.
+            const powerOffTime = new Date(Date.now() + COFFEE_POWER_OFF_DELAY_MS).toISOString();
+            if (!isBrewOnly) {
+              const { error: preErr } = await supabase
+                .from('schedules')
+                .update({ status: 'pending', scheduled_time: powerOffTime, last_error: '[COFFEE_STEP=POWER_OFF]' })
+                .eq('id', schedule.id);
+              if (preErr) console.error('Coffee PRESS pre-persist DB error:', preErr);
+            }
+
+            console.log('Coffee step 2: single press via SwitchBot...');
             const switchbotResult = await pressBot(switchbotDeviceId);
             await logScheduleEvent(schedule.id, 'coffee.press.success', {
               device_id: switchbotDeviceId,
-              attempt: pressAttempt,
-              max_attempts: COFFEE_PRESS_ATTEMPTS,
               switchbot_status: switchbotResult?.statusCode,
               switchbot_message: switchbotResult?.message,
             });
 
-            if (pressAttempt < COFFEE_PRESS_ATTEMPTS) {
-              const nextAttempt = pressAttempt + 1;
-              const nextTime = new Date(Date.now() + COFFEE_PRESS_INTERVAL_MS).toISOString();
-              await supabase
-                .from('schedules')
-                .update({ status: 'pending', scheduled_time: nextTime, last_error: `[COFFEE_STEP=PRESS][COFFEE_PRESS_ATTEMPT=${nextAttempt}]` })
-                .eq('id', schedule.id);
-              await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
-              console.log(`Coffee press attempt ${pressAttempt}: scheduled PRESS attempt ${nextAttempt} at ${nextTime}.`);
-              await logScheduleEvent(schedule.id, 'coffee.press.next_scheduled', {
-                next_step: 'PRESS',
-                next_attempt: nextAttempt,
-                next_time: nextTime,
-              });
-
-              results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS', attempt: nextAttempt });
-              continue;
-            }
-
             if (!isBrewOnly) {
-              const nextTime = new Date(Date.now() + COFFEE_POWER_OFF_DELAY_MS).toISOString();
-              await supabase
-                .from('schedules')
-                .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=POWER_OFF]' })
-                .eq('id', schedule.id);
-              await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
-              console.log(`Coffee press attempts completed: scheduled POWER_OFF at ${nextTime}.`);
+              await scheduleWebhook(webhookUrl, powerOffTime, { schedule_id: schedule.id, source: 'qstash' });
+              console.log(`Coffee press done: scheduled POWER_OFF at ${powerOffTime}.`);
               await logScheduleEvent(schedule.id, 'coffee.power_off.next_scheduled', {
                 next_step: 'POWER_OFF',
-                next_time: nextTime,
-                completed_press_attempts: pressAttempt,
+                next_time: powerOffTime,
               });
 
               results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_OFF' });
               continue;
             }
-            // brew_only: fall through to mark completed after the press series
+            // brew_only: fall through to mark completed after the single press
           } else if (step === 'POWER_OFF') {
             // 3. Power OFF via Tuya Fingerbot
             console.log('Coffee step 3: Power OFF via Tuya Fingerbot...');
@@ -383,29 +369,30 @@ async function handleRequest(request) {
           status: newStatus
         };
 
-        if (
-          schedule.appliance_id === COFFEE_ID &&
-          errorType === 'SWITCHBOT_COMMAND_FAILED' &&
-          newStatus === 'pending'
-        ) {
+        if (schedule.appliance_id === COFFEE_ID && newStatus === 'pending') {
+          // Always keep the current step marker on coffee errors — losing it
+          // restarts the sequence from POWER_ON, which toggles power again.
           const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-          const currentStep = currentStepMatch ? currentStepMatch[1] : 'PRESS';
-          const currentAttempt = getCoffeePressAttempt(schedule);
-          const retryTime = new Date(Date.now() + COFFEE_PRESS_INTERVAL_MS).toISOString();
+          const isBrewOnly = schedule.program_key === 'coffee.brew_only';
+          const currentStep = currentStepMatch ? currentStepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+          updates.last_error = `[COFFEE_STEP=${currentStep}] ${logMessage}`;
 
-          updates.scheduled_time = retryTime;
-          updates.last_error = `[COFFEE_STEP=${currentStep}][COFFEE_PRESS_ATTEMPT=${currentAttempt}] ${logMessage}`;
+          // Retry the press only when the SwitchBot API call itself failed —
+          // in that case no coffee was made, so a re-press is safe.
+          if (errorType === 'SWITCHBOT_COMMAND_FAILED') {
+            const retryTime = new Date(Date.now() + COFFEE_PRESS_RETRY_INTERVAL_MS).toISOString();
+            updates.scheduled_time = retryTime;
 
-          const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
-          const host = request.headers.get('host');
-          const webhookUrl = `${protocol}://${host}/api/process-queue`;
-          await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_switchbot_retry' });
-          await logScheduleEvent(schedule.id, 'coffee.switchbot.retry_scheduled', {
-            step: currentStep,
-            attempt: currentAttempt,
-            next_time: retryTime,
-            retry_count: newRetryCount,
-          });
+            const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+            const host = request.headers.get('host');
+            const webhookUrl = `${protocol}://${host}/api/process-queue`;
+            await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_switchbot_retry' });
+            await logScheduleEvent(schedule.id, 'coffee.switchbot.retry_scheduled', {
+              step: currentStep,
+              next_time: retryTime,
+              retry_count: newRetryCount,
+            });
+          }
         }
 
         await supabase

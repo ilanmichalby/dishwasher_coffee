@@ -49,7 +49,11 @@ export async function sendSwitchBotCommand(deviceId, command, parameter = 'defau
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(`SwitchBot API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    const err = new Error(`SwitchBot API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    // HTTP-level failure means the command was not executed — safe to retry.
+    err.errorType = 'SWITCHBOT_COMMAND_FAILED';
+    err.switchbotResponse = errorData;
+    throw err;
   }
 
   const data = await response.json();

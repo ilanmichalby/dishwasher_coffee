@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+
+// Single-user app: tokens always live in one fixed row (upserted, never duplicated).
+const AUTH_ROW_ID = '00000000-0000-0000-0000-000000000001';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -51,23 +54,23 @@ export async function GET(request) {
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + expires_in);
 
-    // We store the token in Supabase. Since it's a personal app, we might just store one row or update the existing one.
-    // Let's delete existing tokens and insert the new one to keep it simple, or update if exists.
-    
-    // First, clear any existing auth entries (assuming single-user app)
-    await supabase.from('bosch_auth').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-
-    // Insert new token
-    const { error: dbError } = await supabase.from('bosch_auth').insert([{
+    // Upsert into the single fixed row — no new row per login.
+    const { error: dbError } = await supabaseAdmin.from('bosch_auth').upsert({
+      id: AUTH_ROW_ID,
       access_token,
       refresh_token,
-      expires_at: expiresAt.toISOString()
-    }]);
+      expires_at: expiresAt.toISOString(),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
 
     if (dbError) {
       console.error('Failed to save token to database:', dbError);
       return NextResponse.json({ error: 'Failed to save token', details: dbError }, { status: 500 });
     }
+
+    // Clean up any legacy rows from before the fixed-row scheme (after the
+    // upsert, so there is never a moment with zero rows).
+    await supabaseAdmin.from('bosch_auth').delete().neq('id', AUTH_ROW_ID);
 
     // Redirect to the home page on success
     return NextResponse.redirect(new URL('/', request.url));

@@ -90,9 +90,16 @@ export default function SmartHomeDashboard() {
   }, []);
 
   const checkAuth = async () => {
-    const { data } = await supabase.from('bosch_auth').select('id').limit(1);
-    setIsAuthenticated(data && data.length > 0);
-    setIsLoading(false);
+    // bosch_auth is locked behind RLS — connection status comes from the server.
+    try {
+      const res = await fetch('/api/auth/bosch/status');
+      const data = res.ok ? await res.json() : null;
+      setIsAuthenticated(!!data?.connected);
+    } catch {
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fetchData = async () => {

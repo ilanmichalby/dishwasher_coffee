@@ -1,34 +1,42 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 import { scheduleWebhook } from '@/lib/qstash';
 
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
-const COFFEE_MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes
+const MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes, for every appliance
 
 /**
- * Returns an error message if a coffee schedule at `scheduledTime` would be
- * within 5 minutes of another active coffee schedule. excludeId allows skipping
- * the row being edited.
+ * Returns an error message if an active schedule for the same appliance
+ * already exists within 5 minutes of `scheduledTime` — blocks both the coffee
+ * power-toggle conflicts and duplicate dishwasher schedules (same device+time).
+ * excludeId allows skipping the row being edited.
  */
-async function checkCoffeeConflict(scheduledTime, excludeId = null) {
+async function checkScheduleConflict(applianceId, scheduledTime, excludeId = null) {
   const target = new Date(scheduledTime).getTime();
-  const windowStart = new Date(target - COFFEE_MIN_GAP_MS).toISOString();
-  const windowEnd = new Date(target + COFFEE_MIN_GAP_MS).toISOString();
+  const windowStart = new Date(target - MIN_GAP_MS).toISOString();
+  const windowEnd = new Date(target + MIN_GAP_MS).toISOString();
 
   let query = supabase
     .from('schedules')
     .select('id, scheduled_time')
-    .eq('appliance_id', COFFEE_ID)
+    .eq('appliance_id', applianceId)
     .in('status', ['pending', 'processing'])
     .gte('scheduled_time', windowStart)
     .lte('scheduled_time', windowEnd);
 
   if (excludeId) query = query.neq('id', excludeId);
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error('Schedule conflict check failed:', error.message);
+    return null; // don't block scheduling on a failed check
+  }
   if (data && data.length > 0) {
     const conflict = new Date(data[0].scheduled_time).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-    return `יש כבר תזמון קפה בשעה ${conflict}. חובה להשאיר לפחות 5 דקות בין תזמונים (כדי שהמכונה תספיק להידלק, להכין ולהיכבות).`;
+    if (applianceId === COFFEE_ID) {
+      return `יש כבר תזמון קפה בשעה ${conflict}. חובה להשאיר לפחות 5 דקות בין תזמונים (כדי שהמכונה תספיק להידלק, להכין ולהיכבות).`;
+    }
+    return `יש כבר תזמון פעיל למכשיר הזה בשעה ${conflict}. כדי למנוע הפעלות כפולות לא ניתן ליצור תזמון נוסף באותו חלון זמן.`;
   }
   return null;
 }
@@ -41,12 +49,10 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Coffee: enforce min 5-minute gap between schedules
-    if (appliance_id === COFFEE_ID) {
-      const conflictErr = await checkCoffeeConflict(scheduled_time);
-      if (conflictErr) {
-        return NextResponse.json({ error: conflictErr }, { status: 409 });
-      }
+    // Reject duplicate/overlapping schedules for the same appliance
+    const conflictErr = await checkScheduleConflict(appliance_id, scheduled_time);
+    if (conflictErr) {
+      return NextResponse.json({ error: conflictErr }, { status: 409 });
     }
 
     // 1. Save to Supabase
@@ -153,9 +159,9 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
 
-    // Coffee: enforce 5-min gap when changing time
-    if (current.appliance_id === COFFEE_ID && scheduled_time && scheduled_time !== current.scheduled_time) {
-      const conflictErr = await checkCoffeeConflict(scheduled_time, id);
+    // Enforce the same-appliance gap when changing time
+    if (scheduled_time && scheduled_time !== current.scheduled_time) {
+      const conflictErr = await checkScheduleConflict(current.appliance_id, scheduled_time, id);
       if (conflictErr) {
         return NextResponse.json({ error: conflictErr }, { status: 409 });
       }

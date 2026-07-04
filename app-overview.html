@@ -539,7 +539,7 @@
           <ul>
             <li>שליטה מיידית במדיח: הדלקה, כיבוי, תוכנית מהירה, עצירה.</li>
             <li>שליטה מיידית בקפה: לחיצת Power דרך Tuya ולחיצת Brew דרך SwitchBot.</li>
-            <li>בתזמון קפה אוטומטי יש לחיצת SwitchBot נוספת דקה אחרי הלחיצה הראשונה, כ-fallback אם הלחיצה הראשונה לא הפעילה קפה בפועל.</li>
+            <li>בתזמון קפה אוטומטי מתבצעת לחיצת SwitchBot אחת בלבד; ניסיון חוזר מתוזמן רק אם קריאת ה-API של SwitchBot נכשלה (עדכון 04.07.2026 — הוסרה סדרת 5 הלחיצות שיצרה כוסות מיותרות).</li>
             <li>תזמון ידני לפי תאריך, שעה ותוכנית.</li>
             <li>Presets לזמני שבת, מוצאי שבת ובוקר יום חול.</li>
             <li>עריכת תזמון קיים עם עדכון זמן ותוכנית.</li>
@@ -662,7 +662,6 @@ HOME_CONNECT_REDIRECT_URI
 SWITCHBOT_TOKEN
 SWITCHBOT_SECRET
 SWITCHBOT_COFFEE_DEVICE_ID
-COFFEE_PRESS_ATTEMPTS
 COFFEE_PRESS_INTERVAL_MS
 COFFEE_POWER_OFF_DELAY_MS
 TUYA_CLIENT_ID
@@ -689,10 +688,10 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
           <h2>תזמון קפה מלא</h2>
           <div class="timeline">
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_ON</strong><p class="muted">Tuya Fingerbot לוחץ על כפתור ההדלקה, ואז התזמון מוזז דקה קדימה.</p></div></div>
-            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>PRESS x5</strong><p class="muted">SwitchBot לוחץ על כפתור הכנת הקפה כמה פעמים בהפרש דקה. ברירת המחדל היא 5 לחיצות, וניתן לכוון דרך COFFEE_PRESS_ATTEMPTS ו-COFFEE_PRESS_INTERVAL_MS.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>PRESS x1</strong><p class="muted">SwitchBot לוחץ פעם אחת בלבד על כפתור הכנת הקפה. ניסיון חוזר מתוזמן (לפי COFFEE_PRESS_INTERVAL_MS) רק אם קריאת ה-API של SwitchBot עצמה נכשלה — כל לחיצה מיותרת היא כוס קפה מיותרת.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>SwitchBot validation</strong><p class="muted">כל פקודת SwitchBot חייבת להחזיר statusCode=100. אם לא, אותו ניסיון מתוזמן שוב ולא נספר כהתקדמות.</p></div></div>
-            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_OFF</strong><p class="muted">בתזמון מלא, Tuya Fingerbot לוחץ שוב לכיבוי רק אחרי סדרת הלחיצות, לפי COFFEE_POWER_OFF_DELAY_MS.</p></div></div>
-            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>מצב Brew Only</strong><p class="muted">מדלג על הדלקה וכיבוי, אבל עדיין מבצע את סדרת לחיצות הקפה.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_OFF</strong><p class="muted">בתזמון מלא, Tuya Fingerbot לוחץ שוב לכיבוי אחרי הלחיצה, לפי COFFEE_POWER_OFF_DELAY_MS.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>מצב Brew Only</strong><p class="muted">מדלג על הדלקה וכיבוי, אבל עדיין מבצע את לחיצת הקפה.</p></div></div>
           </div>
         </article>
       </div>
@@ -836,7 +835,7 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             אחרי אירוע שבת 27.06.2026 נוסף רצף לחיצות מאומת: ברירת המחדל היא 5 פקודות SwitchBot בהפרש דקה, ורק אחריהן מתוזמן כיבוי. בנוסף נוספה בדיקת statusCode של SwitchBot, כך ש-HTTP 200 עם שגיאת מכשיר לא ייחשב כהצלחה.
           </p>
           <div class="tag-row">
-            <span class="tag ok">5 לחיצות</span>
+            <span class="tag ok">לחיצה אחת + retry על כשל API</span>
             <span class="tag ok">SwitchBot statusCode</span>
             <span class="tag ok">schedule_events</span>
             <span class="tag ok">build עבר</span>
