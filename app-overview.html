@@ -680,7 +680,8 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>2. שמירה</strong><p class="muted">POST /api/schedule שומר שורה ב-schedules עם status=pending.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>3. תזמון webhook</strong><p class="muted">QStash מקבל URL ל-/api/process-queue עם delay עד לזמן הרצוי.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>4. עיבוד</strong><p class="muted">המערכת מדליקה את המדיח, בודקת דלת/Remote Start/תוכניות זמינות, ואז מפעילה תוכנית.</p></div></div>
-            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>5. סיום</strong><p class="muted">השורה מסומנת completed או failed עם last_error.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>5. ניסיון חוזר בכשל</strong><p class="muted">אם ההפעלה נכשלת (דלת פתוחה, מכשיר לא מחובר, שגיאת רשת) — ניסיון חוזר אוטומטי אחרי 15 דקות, עד 3 ניסיונות (~15/30/45 דקות מהכשל המקורי). ניתן לכוונן עם DISHWASHER_RETRY_INTERVAL_MS.</p></div></div>
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>6. סיום</strong><p class="muted">השורה מסומנת completed, או failed עם last_error אחרי מיצוי הניסיונות.</p></div></div>
           </div>
         </article>
 
@@ -773,6 +774,7 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
           <span class="tag">coffee.power_off.next_scheduled</span>
           <span class="tag">coffee.press_retry.success</span>
           <span class="tag">coffee.power_off.success</span>
+          <span class="tag">dishwasher.retry_scheduled</span>
           <span class="tag ok">schedule.completed</span>
           <span class="tag risk">schedule.failed</span>
         </div>

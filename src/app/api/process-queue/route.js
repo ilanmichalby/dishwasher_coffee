@@ -15,7 +15,8 @@ const receiver = new Receiver({
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
-const DISHWASHER_MAX_RETRIES = 5;
+// 3 retries, 15 minutes apart → attempts at ~+15/+30/+45 min after the failure
+const DISHWASHER_MAX_RETRIES = 3;
 const COFFEE_MAX_RETRIES = 20;
 
 function envNumber(name, fallback) {
@@ -25,6 +26,7 @@ function envNumber(name, fallback) {
 
 const COFFEE_PRESS_RETRY_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
 const COFFEE_POWER_OFF_DELAY_MS = envNumber('COFFEE_POWER_OFF_DELAY_MS', 120000);
+const DISHWASHER_RETRY_INTERVAL_MS = envNumber('DISHWASHER_RETRY_INTERVAL_MS', 15 * 60 * 1000);
 
 async function logScheduleEvent(scheduleId, eventType, details = {}) {
   const { error } = await supabase
@@ -356,10 +358,12 @@ async function handleRequest(request) {
         });
 
         const newRetryCount = schedule.retry_count + 1;
-        const isFatal = errorType === 'DOOR_OPEN' || errorType === 'REMOTE_START_DISABLED';
-        const maxRetries = schedule.appliance_id === COFFEE_ID ? COFFEE_MAX_RETRIES : DISHWASHER_MAX_RETRIES;
-        // Fatal errors (door open, no remote start) don't benefit from retrying — mark failed immediately
-        const newStatus = isFatal || newRetryCount >= maxRetries ? 'failed' : 'pending';
+        const isCoffee = schedule.appliance_id === COFFEE_ID;
+        const maxRetries = isCoffee ? COFFEE_MAX_RETRIES : DISHWASHER_MAX_RETRIES;
+        // Door open / device offline are recoverable — someone may close the
+        // door or the connection may return — so every dishwasher failure gets
+        // the full retry budget before being marked failed.
+        const newStatus = newRetryCount >= maxRetries ? 'failed' : 'pending';
 
         // Save structured error info to DB for dashboard display
         const logMessage = `[${new Date().toISOString()}] [${errorType}] ${error.message}`;
@@ -369,7 +373,7 @@ async function handleRequest(request) {
           status: newStatus
         };
 
-        if (schedule.appliance_id === COFFEE_ID && newStatus === 'pending') {
+        if (isCoffee && newStatus === 'pending') {
           // Always keep the current step marker on coffee errors — losing it
           // restarts the sequence from POWER_ON, which toggles power again.
           const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
@@ -393,6 +397,30 @@ async function handleRequest(request) {
               retry_count: newRetryCount,
             });
           }
+        } else if (!isCoffee && newStatus === 'pending') {
+          // Dishwasher retry: try again in 15 minutes (→ ~+15/+30/+45 min
+          // after the original failure). Without bumping scheduled_time the
+          // row would be retried on the very next queue run instead.
+          const retryTime = new Date(Date.now() + DISHWASHER_RETRY_INTERVAL_MS).toISOString();
+          updates.scheduled_time = retryTime;
+
+          try {
+            const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+            const host = request.headers.get('host');
+            const webhookUrl = `${protocol}://${host}/api/process-queue`;
+            await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_dishwasher_retry' });
+          } catch (qstashError) {
+            // The row stays 'pending' with the retry time, so a later queue
+            // run still picks it up even if QStash scheduling failed.
+            console.error('Dishwasher retry QStash scheduling failed:', qstashError);
+          }
+
+          await logScheduleEvent(schedule.id, 'dishwasher.retry_scheduled', {
+            error_type: errorType,
+            attempt: newRetryCount,
+            max_attempts: maxRetries,
+            next_time: retryTime,
+          });
         }
 
         await supabase
