@@ -39,7 +39,12 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
 
   const expandedSchedule = filteredSchedules.find(s => s.id === expandedScheduleId);
 
-  const getStatusBadge = (status?: string, error?: string) => {
+  const cleanErrorMessage = (raw?: string) => {
+    if (!raw) return '';
+    return raw.replace(/^(?:\[[^\]]*\]\s*)+/, '').trim() || raw;
+  }
+
+  const getStatusBadge = (status?: string, error?: string, retryCount?: number) => {
     switch(status) {
       case 'completed':
         return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-xs whitespace-nowrap"><CheckCircle2 className="h-3 w-3 ml-1" /> הושלם</Badge>;
@@ -54,6 +59,15 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
         return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30 text-xs whitespace-nowrap"><RefreshCw className="h-3 w-3 ml-1 animate-spin" /> מעבד...</Badge>;
       case 'pending':
       default:
+        if ((retryCount ?? 0) > 0) {
+          const reason = cleanErrorMessage(error);
+          return (
+            <div className="flex flex-col gap-1 items-start">
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-xs whitespace-nowrap"><RefreshCw className="h-3 w-3 ml-1" /> בניסיון חוזר · ניסיון {retryCount}</Badge>
+              {reason && <span className="text-[10px] text-amber-400 max-w-[150px] truncate" title={reason}>{reason}</span>}
+            </div>
+          );
+        }
         return <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/30 text-xs whitespace-nowrap"><Clock className="h-3 w-3 ml-1" /> ממתין</Badge>;
     }
   }
@@ -140,7 +154,7 @@ export function ScheduleTable({ schedules, onDelete, onEdit }: ScheduleTableProp
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {getStatusBadge(schedule.status, schedule.last_error)}
+                    {getStatusBadge(schedule.status, schedule.last_error, schedule.retry_count)}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">

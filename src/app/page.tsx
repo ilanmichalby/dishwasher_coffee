@@ -313,6 +313,7 @@ export default function SmartHomeDashboard() {
     rawDate: s.scheduled_time,
     status: s.status || 'pending',
     last_error: s.last_error,
+    retry_count: s.retry_count,
     events: scheduleEvents
       .filter(e => e.schedule_id === s.id)
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
