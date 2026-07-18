@@ -103,6 +103,24 @@ export async function getTuyaDevices() {
   return await tuyaRequest('GET', '/v1.0/iot-01/associated-users/devices');
 }
 
+/**
+ * Diagnostics for the configured Fingerbot: whether the cloud can reach it
+ * (online) and which DP codes it actually accepts. Used by the debug endpoint
+ * so it can be read from a phone browser without running anything locally.
+ */
+export async function getFingerbotDiagnostics() {
+  const deviceId = process.env.TUYA_FINGERBOT_DEVICE_ID;
+  if (!deviceId) {
+    throw new Error('TUYA_FINGERBOT_DEVICE_ID is not configured');
+  }
+  const [info, specifications, status] = await Promise.all([
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}`),
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}/specifications`),
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}/status`),
+  ]);
+  return { deviceId, online: info?.online, info, specifications, status };
+}
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // How long the arm stays pressed down before releasing (a real "click").
