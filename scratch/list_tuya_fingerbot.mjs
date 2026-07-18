@@ -50,10 +50,19 @@ async function tuyaGet(token, path) {
 
 const token = await getToken();
 
+console.log('\n=== DEVICE INFO (is it reachable from the CLOUD?) ===');
+const info = await tuyaGet(token, `/v1.0/devices/${deviceId}`);
+console.log(JSON.stringify(info, null, 2));
+if (info?.result) {
+  console.log(`\n>>> online (cloud-reachable): ${info.result.online}`);
+  console.log('>>> If online === false, the cloud (and our automation) cannot reach the');
+  console.log('>>> Fingerbot — it needs a permanent Tuya BLE gateway/hub nearby.');
+}
+
 console.log('\n=== SPECIFICATIONS (valid DP codes to send) ===');
 const specs = await tuyaGet(token, `/v1.0/devices/${deviceId}/specifications`);
 console.log(JSON.stringify(specs, null, 2));
 
-console.log('\n=== CURRENT STATUS (is the arm stuck "true"?) ===');
+console.log('\n=== CURRENT STATUS ===');
 const status = await tuyaGet(token, `/v1.0/devices/${deviceId}/status`);
 console.log(JSON.stringify(status, null, 2));
