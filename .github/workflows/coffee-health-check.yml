@@ -1,0 +1,49 @@
+name: Coffee pre-Shabbat health check
+
+# Catches the failure that ruined Shabbat: the Tuya gateway drops off WiFi, the
+# Fingerbot goes offline to the cloud, and the scheduled coffee silently never
+# runs. This runs Friday (Israel morning/midday) — while there's still time to
+# reboot the gateway — and FAILS the job (which emails the repo owner) if a
+# coffee is scheduled but the Fingerbot is unreachable.
+#
+# Requires the same repo secrets as the reconciliation cron: APP_URL, CRON_SECRET.
+
+on:
+  schedule:
+    - cron: '0 8 * * 5'    # Fri 08:00 UTC (~10:00–11:00 Israel)
+    - cron: '0 12 * * 5'   # Fri 12:00 UTC (~14:00–15:00 Israel) — second chance
+  workflow_dispatch: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Fingerbot reachability
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -u
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing APP_URL or CRON_SECRET repo secret." >&2
+            exit 1
+          fi
+
+          # Secret goes in the Authorization header, never the URL, so it isn't
+          # logged. 200 = healthy, 503 = coffee scheduled but Fingerbot offline.
+          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/health/coffee") || code=000
+          echo "HTTP $code"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+
+          if [ "$code" = "200" ]; then
+            echo "Healthy ✅"
+            exit 0
+          fi
+
+          echo "UNHEALTHY — a coffee is scheduled but the Fingerbot is offline." >&2
+          echo "Reboot the Tuya gateway and confirm it reconnects to WiFi before Shabbat." >&2
+          exit 1
