@@ -1,0 +1,66 @@
+name: Process schedule queue (reconciliation cron)
+
+# Safety net for the coffee/dishwasher runner.
+#
+# A coffee run is a chain of steps (power on -> press -> power off) handed off
+# between separate invocations via QStash. QStash is fast, but a single lost or
+# delayed delivery — or a Netlify timeout mid-step — would otherwise leave the
+# row 'pending' at a future time with nothing to pick it up: the machine powers
+# on but never brews ("no coffee on Shabbat").
+#
+# This periodically re-drives /api/process-queue, which re-claims any due
+# 'pending' row and advances it one step. The route claims each row atomically
+# (status pending -> processing in a single conditional UPDATE) and tracks the
+# current step in last_error, so overlapping with a real QStash delivery can
+# never cause a double power-toggle or a double press.
+#
+# NOTE: GitHub Actions runs `schedule` triggers only from the repository's
+# DEFAULT branch. This backstop is inactive until merged to main.
+
+on:
+  schedule:
+    # Every 5 minutes — the finest granularity GitHub Actions allows. QStash
+    # remains the fast primary path (~60s); this is the recovery net.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+# Don't let slow/queued runs pile up on top of each other.
+concurrency:
+  group: process-queue-cron
+  cancel-in-progress: false
+
+jobs:
+  process-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger process-queue
+        env:
+          # APP_URL   = production base URL, e.g. https://your-site.netlify.app
+          # CRON_SECRET = same value set in the Netlify environment variables
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -u
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing APP_URL or CRON_SECRET repo secret." >&2
+            exit 1
+          fi
+
+          # Retry so a transient cold start / network blip doesn't skip a whole
+          # 5-minute window.
+          for attempt in 1 2 3 4; do
+            code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' \
+              -X POST "$APP_URL/api/process-queue" \
+              -H "Authorization: Bearer $CRON_SECRET") || code=000
+            echo "Attempt $attempt: HTTP $code"
+            cat /tmp/body.txt 2>/dev/null || true
+            echo
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+
+          echo "process-queue did not return 200 after retries" >&2
+          exit 1

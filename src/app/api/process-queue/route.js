@@ -38,6 +38,21 @@ async function logScheduleEvent(scheduleId, eventType, details = {}) {
   }
 }
 
+// Wraps scheduleWebhook so a QStash outage/throw can never abort a coffee step
+// mid-sequence. On failure we return null and rely on the reconciliation cron
+// (.github/workflows/process-queue-cron.yml): the row is always left 'pending'
+// at its next-step time BEFORE we get here, so a periodic re-run re-claims it
+// and advances the sequence. Without this, a single lost delivery stranded the
+// machine "powered on but never brewed".
+async function safeScheduleWebhook(url, timeIso, body) {
+  try {
+    return await scheduleWebhook(url, timeIso, body);
+  } catch (err) {
+    console.error('QStash next-step scheduling failed (cron will recover):', err?.message || err);
+    return null;
+  }
+}
+
 // Force dynamic execution for this route (no caching)
 export const dynamic = 'force-dynamic';
 
@@ -191,9 +206,17 @@ async function handleRequest(request) {
               .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
               .eq('id', schedule.id);
             if (rescheduleErr) console.error('Coffee POWER_ON reschedule DB error:', rescheduleErr);
-            const qres = await scheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+
+            // Hand the PRESS step to QStash. The row is already 'pending' at
+            // nextTime, so even if this delivery is lost the reconciliation
+            // cron re-picks it — otherwise the machine powers on but never brews.
+            const qres = await safeScheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
             console.log(`Coffee step 1: scheduled PRESS at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
-            await logScheduleEvent(schedule.id, 'coffee.power_on.next_scheduled', { next_step: 'PRESS', next_time: nextTime });
+            await logScheduleEvent(schedule.id, 'coffee.power_on.next_scheduled', {
+              next_step: 'PRESS',
+              next_time: nextTime,
+              qstash: qres ? 'scheduled' : 'skipped_fallback_cron',
+            });
 
             console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
             await triggerFingerbot();
@@ -227,11 +250,12 @@ async function handleRequest(request) {
             });
 
             if (!isBrewOnly) {
-              await scheduleWebhook(webhookUrl, powerOffTime, { schedule_id: schedule.id, source: 'qstash' });
+              const qres = await safeScheduleWebhook(webhookUrl, powerOffTime, { schedule_id: schedule.id, source: 'qstash' });
               console.log(`Coffee press done: scheduled POWER_OFF at ${powerOffTime}.`);
               await logScheduleEvent(schedule.id, 'coffee.power_off.next_scheduled', {
                 next_step: 'POWER_OFF',
                 next_time: powerOffTime,
+                qstash: qres ? 'scheduled' : 'skipped_fallback_cron',
               });
 
               results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_OFF' });

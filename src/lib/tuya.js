@@ -104,7 +104,43 @@ export async function getTuyaDevices() {
 }
 
 /**
- * Triggers the Fingerbot (sends a 'click' / switch on command)
+ * Diagnostics for the configured Fingerbot: whether the cloud can reach it
+ * (online) and which DP codes it actually accepts. Used by the debug endpoint
+ * so it can be read from a phone browser without running anything locally.
+ */
+export async function getFingerbotDiagnostics() {
+  const deviceId = process.env.TUYA_FINGERBOT_DEVICE_ID;
+  if (!deviceId) {
+    throw new Error('TUYA_FINGERBOT_DEVICE_ID is not configured');
+  }
+  const [info, specifications, status] = await Promise.all([
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}`),
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}/specifications`),
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}/status`),
+  ]);
+  return { deviceId, online: info?.online, info, specifications, status };
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// How long the arm stays pressed down before releasing (a real "click").
+const FINGERBOT_SUSTAIN_MS = Number(process.env.TUYA_FINGERBOT_SUSTAIN_MS) > 0
+  ? Number(process.env.TUYA_FINGERBOT_SUSTAIN_MS)
+  : 800;
+
+/**
+ * Presses the Fingerbot once as a real momentary click: arm DOWN, hold briefly,
+ * arm UP.
+ *
+ * A Fingerbot in "switch mode" only moves when the boolean DP *changes*. The
+ * previous version always sent `true`, so it pressed once and then did nothing
+ * on every later call once the arm was already down — which is why power on/off
+ * stopped pressing. Toggling true -> false guarantees a physical press+release
+ * on every call, regardless of the arm's current position. (If the device is in
+ * "click mode" the trailing `false` is a harmless no-op.)
+ *
+ * The DP code defaults to `switch_1`; override with TUYA_FINGERBOT_DP_CODE if the
+ * device exposes a different code (run scratch/list_tuya_fingerbot.mjs to check).
  */
 export async function triggerFingerbot() {
   const deviceId = process.env.TUYA_FINGERBOT_DEVICE_ID;
@@ -113,8 +149,24 @@ export async function triggerFingerbot() {
     throw new Error('TUYA_FINGERBOT_DEVICE_ID is not configured');
   }
 
-  // Fingerbot supports 'click' mode (single press) via 'switch' DP
-  return await tuyaRequest('POST', `/v1.0/iot-03/devices/${deviceId}/commands`, {
-    commands: [{ code: 'switch_1', value: true }],
+  const dpCode = process.env.TUYA_FINGERBOT_DP_CODE || 'switch_1';
+  const path = `/v1.0/iot-03/devices/${deviceId}/commands`;
+
+  // Arm DOWN — the actual press. If this fails, no press happened: surface it.
+  const result = await tuyaRequest('POST', path, {
+    commands: [{ code: dpCode, value: true }],
   });
+
+  // Hold, then arm UP so the NEXT press has a state change to act on. A failure
+  // here still means the press landed, so don't fail the whole step over it.
+  await wait(FINGERBOT_SUSTAIN_MS);
+  try {
+    await tuyaRequest('POST', path, {
+      commands: [{ code: dpCode, value: false }],
+    });
+  } catch (err) {
+    console.warn('Fingerbot arm-up (release) failed; press landed, will release next cycle:', err?.message || err);
+  }
+
+  return result;
 }
