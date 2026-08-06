@@ -64,3 +64,27 @@ jobs:
 
           echo "process-queue did not return 200 after retries" >&2
           exit 1
+
+      - name: Send failure alert email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SERVER }}
+          server_port: ${{ secrets.EMAIL_PORT }}
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "⚠️ GitHub Workflow Failed: Process schedule queue"
+          to: info@mindcet.io
+          from: ${{ secrets.EMAIL_FROM }}
+          body: |
+            Workflow: Process schedule queue (reconciliation cron)
+            Status: FAILED ❌
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+
+            This workflow runs every 5 minutes to re-process pending dishwasher/coffee schedules.
+            A failure means the safety net missed a cycle, but QStash remains the primary path.
+
+            Check the run details to diagnose the issue.
