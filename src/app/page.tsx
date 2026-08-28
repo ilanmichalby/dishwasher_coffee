@@ -12,6 +12,7 @@ import { ControlSheet } from "@/components/dashboard/control-sheet";
 import { ScheduleTable } from "@/components/dashboard/schedule-table";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { FloatingNav } from "@/components/dashboard/floating-nav";
+import { AutomationHealthCheck } from "@/components/dashboard/automation-health-check";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Power } from 'lucide-react';
 import { VoiceCommandBar } from "@/components/dashboard/voice-command-bar";
@@ -467,6 +468,14 @@ export default function SmartHomeDashboard() {
 
           {/* Sidebar Area */}
           <div className="xl:col-span-4 space-y-12">
+            <section>
+              <h2 className="text-2xl font-bold mb-6 text-white tracking-tight flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-purple-500 rounded-full" />
+                בדיקת אוטומציות
+              </h2>
+              <AutomationHealthCheck />
+            </section>
+
             <section>
               <h2 className="text-2xl font-bold mb-6 text-white tracking-tight flex items-center gap-2">
                 <span className="w-1.5 h-6 bg-amber-500 rounded-full" />
