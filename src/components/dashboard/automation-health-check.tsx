@@ -32,8 +32,9 @@ export function AutomationHealthCheck() {
         },
       })
 
-      if (!response.ok) {
-        throw new Error(`בדיקה נכשלה: ${response.statusText}`)
+      // 200 = healthy, 503 = unhealthy but valid check, 401/500 = error
+      if (response.status !== 200 && response.status !== 503) {
+        throw new Error(`שגיאה בשרת: ${response.statusText}`)
       }
 
       const data = await response.json()
