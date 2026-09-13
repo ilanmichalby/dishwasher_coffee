@@ -1,3 +1,36 @@
+# רשת ביטחון אמיתית לתור — cron-job.org
+
+## למה
+ה-GitHub Action מוגדר לרוץ כל 5 דקות, אבל GitHub פשוט מדלג על רוב הריצות
+המתוזמנות. בפועל (נמדד על 1064 ריצות) הוא רץ פעם ב-75 דקות בממוצע — ובשבת
+12.09.2026 הוא רץ ב-00:07, 04:30, 08:47, 12:24, 15:42. זו לא רשת ביטחון.
+QStash נשאר הנתיב המהיר; צריך משהו אמין שיאסוף שורות שנפלו בין הכיסאות.
+
+## הגדרה (חינם, 3 דקות)
+1. להירשם ב-https://cron-job.org ולאשר את המייל.
+2. **Create cronjob** ולמלא:
+   - **Title**: `dishwasher/coffee queue`
+   - **URL**: `https://dishwasher-coffee.netlify.app/api/process-queue`
+   - **Schedule**: Every 5 minutes (`*/5`)
+3. **Advanced** (חשוב — בלי זה יחזור 401):
+   - **Request method**: `POST`
+   - **Headers** → להוסיף:
+     `Authorization: Bearer <CRON_SECRET>`
+     (אותו ערך בדיוק שמוגדר ב-Netlify Environment variables)
+4. **Save**, ואז **TEST RUN** → צריך לחזור `HTTP 200` עם
+   `{"message":"No pending schedules to process."}` או רשימת `results`.
+5. ב-Settings של החשבון להפעיל התראות מייל על כשלים.
+
+## הערות
+- הסוד עובר ב-header ולא ב-URL, כדי שלא יישמר בלוגים של אף אחד.
+- הראוט מקבל גם GET וגם POST; POST הוא הנכון כאן.
+- ה-GitHub Action נשאר כגיבוי שלישי. הוא לא מזיק — הוא פשוט לא אמין לבדו.
+- מסירה כפולה (cron-job.org + QStash באותה שנייה) בטוחה: הראוט תופס כל שורה
+  באופן אטומי (`pending` → `processing` בעדכון מותנה אחד), אז אין הדלקה כפולה
+  ואין לחיצה כפולה.
+
+---
+
 # הוראות פריסה — עדכון 13.09.2026 (ערב, אחרי האבחון)
 
 ## מה שנמצא בפועל (מתוך `/api/debug/last-run` ולוגים של GitHub)
