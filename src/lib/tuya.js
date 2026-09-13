@@ -129,15 +129,32 @@ const FINGERBOT_SUSTAIN_MS = Number(process.env.TUYA_FINGERBOT_SUSTAIN_MS) > 0
   : 800;
 
 /**
+ * Reads a single DP value from the device's current status.
+ */
+async function readDpValue(deviceId, dpCode) {
+  const status = await tuyaRequest('GET', `/v1.0/devices/${deviceId}/status`);
+  return (status || []).find((s) => s.code === dpCode)?.value;
+}
+
+async function sendDp(deviceId, dpCode, value) {
+  return await tuyaRequest('POST', `/v1.0/iot-03/devices/${deviceId}/commands`, {
+    commands: [{ code: dpCode, value }],
+  });
+}
+
+/**
  * Presses the Fingerbot once as a real momentary click: arm DOWN, hold briefly,
  * arm UP.
  *
- * A Fingerbot in "switch mode" only moves when the boolean DP *changes*. The
- * previous version always sent `true`, so it pressed once and then did nothing
- * on every later call once the arm was already down — which is why power on/off
- * stopped pressing. Toggling true -> false guarantees a physical press+release
- * on every call, regardless of the arm's current position. (If the device is in
- * "click mode" the trailing `false` is a harmless no-op.)
+ * A Fingerbot in "switch mode" only moves when the boolean DP *changes*. So the
+ * arm MUST be up before we can press: sending `true` to a device already at
+ * `true` moves nothing at all, while the API happily reports success. That is
+ * how the machine ended up "powered on, no coffee, everything green in the log"
+ * — an earlier release had failed and left the arm parked down, so every later
+ * press was a silent no-op.
+ *
+ * Hence: read the arm's real position first and raise it if it is down, then
+ * click, then VERIFY the release actually took and retry it if it didn't.
  *
  * The DP code defaults to `switch_1`; override with TUYA_FINGERBOT_DP_CODE if the
  * device exposes a different code (run scratch/list_tuya_fingerbot.mjs to check).
@@ -150,23 +167,43 @@ export async function triggerFingerbot() {
   }
 
   const dpCode = process.env.TUYA_FINGERBOT_DP_CODE || 'switch_1';
-  const path = `/v1.0/iot-03/devices/${deviceId}/commands`;
 
-  // Arm DOWN — the actual press. If this fails, no press happened: surface it.
-  const result = await tuyaRequest('POST', path, {
-    commands: [{ code: dpCode, value: true }],
-  });
-
-  // Hold, then arm UP so the NEXT press has a state change to act on. A failure
-  // here still means the press landed, so don't fail the whole step over it.
-  await wait(FINGERBOT_SUSTAIN_MS);
+  // 1. The arm must start UP, or the press below changes nothing.
+  let armDown = null;
   try {
-    await tuyaRequest('POST', path, {
-      commands: [{ code: dpCode, value: false }],
-    });
+    armDown = await readDpValue(deviceId, dpCode) === true;
   } catch (err) {
-    console.warn('Fingerbot arm-up (release) failed; press landed, will release next cycle:', err?.message || err);
+    console.warn('Could not read Fingerbot arm position; pressing blind:', err?.message || err);
   }
 
+  if (armDown) {
+    console.warn('Fingerbot arm was parked DOWN — raising it before the press.');
+    await sendDp(deviceId, dpCode, false);
+    await wait(FINGERBOT_SUSTAIN_MS);
+  }
+
+  // 2. Arm DOWN — the actual press. If this fails, no press happened: surface it.
+  const result = await sendDp(deviceId, dpCode, true);
+
+  // 3. Hold, then arm UP. A failed release leaves the arm down and turns every
+  // FUTURE press into a no-op, so it is worth retrying and verifying.
+  await wait(FINGERBOT_SUSTAIN_MS);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await sendDp(deviceId, dpCode, false);
+      await wait(300);
+      const stillDown = await readDpValue(deviceId, dpCode) === true;
+      if (!stillDown) return result;
+      console.warn(`Fingerbot still reports the arm DOWN after release attempt ${attempt}.`);
+    } catch (err) {
+      console.warn(`Fingerbot arm-up (release) attempt ${attempt} failed:`, err?.message || err);
+    }
+    await wait(500);
+  }
+
+  // The press itself landed, so don't fail the step — but this device now needs
+  // attention: until the arm comes up, the next press will do nothing.
+  console.error('Fingerbot arm could not be raised after 3 attempts — the NEXT press will be a no-op.');
   return result;
 }
