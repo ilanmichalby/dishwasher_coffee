@@ -54,16 +54,17 @@ export async function GET(request) {
 
   // Can the cloud reach the Fingerbot right now?
   let online = null;
-  let armParkedDown = false;
+  let lastDpValue = null;
   let deviceError = null;
   try {
     const diag = await getFingerbotDiagnostics();
     online = diag.online === true;
-    // An arm left in the pressed position makes the next press a silent no-op:
-    // the boolean DP only moves the arm when it CHANGES. triggerFingerbot now
-    // raises it first, but if it is still stuck here, the device needs a look.
+    // Reported for information only. This Fingerbot is in click mode: it
+    // clicks and returns by itself, so a DP reading of `true` is just the last
+    // command's value, NOT an arm stuck in the pressed position. Don't fail the
+    // check on it — that would email a false alarm every Friday.
     const dpCode = process.env.TUYA_FINGERBOT_DP_CODE || 'switch_1';
-    armParkedDown = (diag.status || []).find((s) => s.code === dpCode)?.value === true;
+    lastDpValue = (diag.status || []).find((s) => s.code === dpCode)?.value ?? null;
   } catch (e) {
     deviceError = e.message;
   }
@@ -91,12 +92,12 @@ export async function GET(request) {
   // Only worth an alert when a coffee is coming AND something on the path from
   // the cloud to the button is not confirmably in order. If nothing is
   // scheduled, an offline gateway isn't urgent yet.
-  const healthy = !needsCoffee || (online === true && !armParkedDown && !botBatteryLow && !botWrongMode && !botError);
+  const healthy = !needsCoffee || (online === true && !botBatteryLow && !botWrongMode && !botError);
 
   const body = {
     healthy,
     fingerbot_online: online,
-    fingerbot_arm_parked_down: armParkedDown,
+    fingerbot_last_dp_value: lastDpValue,
     device_error: deviceError,
     db_error: dbError ? dbError.message : null,
     switchbot: bot,
@@ -112,8 +113,6 @@ export async function GET(request) {
           : 'No coffee scheduled in the next 48h — nothing to check.')
       : online !== true
         ? 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway and confirm it reconnects to WiFi BEFORE Shabbat.'
-        : armParkedDown
-        ? 'Coffee is scheduled but the Fingerbot arm is parked DOWN (pressed). Until it is raised, the power button is never actually clicked. Check the arm.'
         : botBatteryLow
           ? `Coffee is scheduled but the SwitchBot battery is at ${bot.battery}%. Replace it before Shabbat — a weak arm reports success without pressing.`
           : botWrongMode
