@@ -1,10 +1,10 @@
-name: Coffee pre-Shabbat health check
+name: Pre-Shabbat health check
 
-# Catches the failure that ruined Shabbat: the Tuya gateway drops off WiFi, the
-# Fingerbot goes offline to the cloud, and the scheduled coffee silently never
-# runs. This runs Friday (Israel morning/midday) — while there's still time to
-# reboot the gateway — and FAILS the job (which emails the repo owner) if a
-# coffee is scheduled but the Fingerbot is unreachable.
+# Catches on FRIDAY everything that silently fails a Shabbat run, while there
+# is still time to fix it by hand: the Tuya gateway off WiFi, a SwitchBot with
+# a dead battery or in the wrong mode, a dishwasher that dropped off the
+# network, a door left open, remote start never armed. The job FAILS (which
+# emails the repo owner) when something is scheduled and not ready.
 #
 # Requires the same repo secrets as the reconciliation cron: APP_URL, CRON_SECRET.
 
@@ -44,6 +44,30 @@ jobs:
             exit 0
           fi
 
-          echo "UNHEALTHY — a coffee is scheduled but the Fingerbot is offline." >&2
-          echo "Reboot the Tuya gateway and confirm it reconnects to WiFi before Shabbat." >&2
+          echo "UNHEALTHY — a coffee is scheduled but the brew path is not ready." >&2
+          echo "See the message above (offline gateway, SwitchBot battery, or wrong mode)." >&2
+          exit 1
+
+      - name: Check dishwashers are reachable and ready
+        if: always()
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -u
+          # Everything that silently fails a Shabbat run — appliance off the
+          # network, door open, remote start not armed — is fixable now.
+          code=$(curl -sS -o /tmp/dw.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/health/dishwashers") || code=000
+          echo "HTTP $code"
+          cat /tmp/dw.json 2>/dev/null || true
+          echo
+
+          if [ "$code" = "200" ]; then
+            echo "Dishwashers ready ✅"
+            exit 0
+          fi
+
+          echo "UNHEALTHY — a dishwasher run is scheduled but the appliance is not ready." >&2
           exit 1

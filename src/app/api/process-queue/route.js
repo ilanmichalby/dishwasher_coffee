@@ -15,8 +15,8 @@ const receiver = new Receiver({
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
-// 3 retries, 15 minutes apart → attempts at ~+15/+30/+45 min after the failure
-const DISHWASHER_MAX_RETRIES = 3; // overridable via DISHWASHER_MAX_RETRIES (see below)
+// Retries every 10 minutes for up to 8 hours (see DISHWASHER_RETRY_INTERVAL_MS).
+const DISHWASHER_MAX_RETRIES = 48; // overridable via DISHWASHER_MAX_RETRIES (see below)
 const COFFEE_MAX_RETRIES = 20;
 
 function envNumber(name, fallback) {
@@ -26,11 +26,15 @@ function envNumber(name, fallback) {
 
 const COFFEE_PRESS_RETRY_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
 const COFFEE_POWER_OFF_DELAY_MS = envNumber('COFFEE_POWER_OFF_DELAY_MS', 120000);
-const DISHWASHER_RETRY_INTERVAL_MS = envNumber('DISHWASHER_RETRY_INTERVAL_MS', 15 * 60 * 1000);
+// Shabbat is the whole point: nobody is watching, and waking up to a
+// dishwasher that quietly gave up at 02:30 ruins the day. So retry for hours,
+// not for 45 minutes — an appliance that drops off WiFi at night is usually
+// back within one. 10 min x 48 = 8 hours of trying.
+const DISHWASHER_RETRY_INTERVAL_MS = envNumber('DISHWASHER_RETRY_INTERVAL_MS', 10 * 60 * 1000);
 // Bounded waits for a dishwasher that isn't ready yet. Unbounded, these two
 // loops re-ran forever without ever raising a visible failure.
 // Retry budget for a dishwasher that failed (offline / door open). Default
-// 3 x 15 min; raise DISHWASHER_MAX_RETRIES to keep trying longer on Shabbat.
+// 48 x 10 min = 8 hours; tune with DISHWASHER_MAX_RETRIES.
 const DISHWASHER_RETRY_BUDGET = envNumber('DISHWASHER_MAX_RETRIES', DISHWASHER_MAX_RETRIES);
 // How long the coffee machine gets to warm up between power-on and the brew
 // press. Too short and the press lands while the machine is still rinsing —
@@ -295,16 +299,32 @@ async function handleRequest(request) {
         } else {
           console.log(`Starting Bosch program for ${dishwasherName}...`);
 
-          // 1. Check connectivity
-          if (connectivityMap[targetHaId] === false) {
-            const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מחובר (אופליין). לא ניתן להפעיל מרחוק.`);
-            offlineErr.errorType = 'DEVICE_OFFLINE';
-            throw offlineErr;
+          // 1. Connectivity is a HINT, not a verdict. Bosch's `connected` flag
+          // can be stale or lag behind the appliance coming back, and refusing
+          // to even try on the strength of it meant a dishwasher that was
+          // actually reachable never got a command. Trying costs nothing: if
+          // the appliance really is offline, the call below fails on its own.
+          const reportedOffline = connectivityMap[targetHaId] === false;
+          if (reportedOffline) {
+            console.warn(`${dishwasherName} is reported offline by Bosch — trying anyway.`);
+            await logScheduleEvent(schedule.id, 'dishwasher.reported_offline', {
+              appliance_id: targetHaId,
+              note: 'Bosch reported the appliance as disconnected; attempting the command regardless.',
+            });
           }
 
           // 2. Always send power-on (idempotent — safe to call even if already on)
           console.log('Step 1: Sending power-on command...');
-          await setDishwasherPowerState(targetHaId, true);
+          try {
+            await setDishwasherPowerState(targetHaId, true);
+          } catch (powerErr) {
+            if (reportedOffline) {
+              const offlineErr = new Error(`המכשיר ${dishwasherName} אינו מחובר (אופליין). לא ניתן להפעיל מרחוק.`);
+              offlineErr.errorType = 'DEVICE_OFFLINE';
+              throw offlineErr;
+            }
+            throw powerErr;
+          }
 
           // 3. Short wait then get status (3s keeps us well under Netlify timeout)
           await sleep(3000);
