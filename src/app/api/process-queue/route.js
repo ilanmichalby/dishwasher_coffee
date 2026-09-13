@@ -16,7 +16,7 @@ const receiver = new Receiver({
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
 // 3 retries, 15 minutes apart → attempts at ~+15/+30/+45 min after the failure
-const DISHWASHER_MAX_RETRIES = 3;
+const DISHWASHER_MAX_RETRIES = 3; // overridable via DISHWASHER_MAX_RETRIES (see below)
 const COFFEE_MAX_RETRIES = 20;
 
 function envNumber(name, fallback) {
@@ -27,6 +27,19 @@ function envNumber(name, fallback) {
 const COFFEE_PRESS_RETRY_INTERVAL_MS = envNumber('COFFEE_PRESS_INTERVAL_MS', 60000);
 const COFFEE_POWER_OFF_DELAY_MS = envNumber('COFFEE_POWER_OFF_DELAY_MS', 120000);
 const DISHWASHER_RETRY_INTERVAL_MS = envNumber('DISHWASHER_RETRY_INTERVAL_MS', 15 * 60 * 1000);
+// Bounded waits for a dishwasher that isn't ready yet. Unbounded, these two
+// loops re-ran forever without ever raising a visible failure.
+// Retry budget for a dishwasher that failed (offline / door open). Default
+// 3 x 15 min; raise DISHWASHER_MAX_RETRIES to keep trying longer on Shabbat.
+const DISHWASHER_RETRY_BUDGET = envNumber('DISHWASHER_MAX_RETRIES', DISHWASHER_MAX_RETRIES);
+// How long the coffee machine gets to warm up between power-on and the brew
+// press. Too short and the press lands while the machine is still rinsing —
+// "it powered on but there was no coffee".
+const COFFEE_POWER_ON_DELAY_MS = envNumber('COFFEE_POWER_ON_DELAY_MS', 60000);
+const REMOTE_START_WAIT_MS = envNumber('REMOTE_START_WAIT_MS', 45000);
+const REMOTE_START_MAX_WAITS = envNumber('REMOTE_START_MAX_WAITS', 20);
+const NO_PROGRAMS_WAIT_MS = envNumber('NO_PROGRAMS_WAIT_MS', 30000);
+const NO_PROGRAMS_MAX_WAITS = envNumber('NO_PROGRAMS_MAX_WAITS', 20);
 
 async function logScheduleEvent(scheduleId, eventType, details = {}) {
   const { error } = await supabase
@@ -129,7 +142,7 @@ async function handleRequest(request) {
 
     // 2. Split schedules: coffee vs dishwasher
     const coffeeSchedules = pendingSchedules.filter(s => s.appliance_id === COFFEE_ID);
-    const dishwasherSchedules = pendingSchedules.filter(s => s.appliance_id !== COFFEE_ID && s.retry_count < DISHWASHER_MAX_RETRIES);
+    const dishwasherSchedules = pendingSchedules.filter(s => s.appliance_id !== COFFEE_ID && s.retry_count < DISHWASHER_RETRY_BUDGET);
 
     // 3. Fetch dishwashers only if there are dishwasher schedules
     let dishwashers = [];
@@ -171,8 +184,15 @@ async function handleRequest(request) {
           continue;
         }
 
-        // Find the specific dishwasher or fallback to the first one
-        const targetHaId = schedule.appliance_id || dishwashers[0].haId;
+        // Find the specific dishwasher or fallback to the first one.
+        // dishwashers can be empty when the Bosch fetch failed above — reading
+        // [0] there threw a TypeError that looked like a device failure.
+        const targetHaId = schedule.appliance_id || dishwashers[0]?.haId;
+        if (!targetHaId) {
+          const noDeviceErr = new Error('לא נמצא מכשיר לתזמון (רשימת המדיחים ריקה — כנראה תקלת חיבור ל-Bosch).');
+          noDeviceErr.errorType = 'NO_DEVICE';
+          throw noDeviceErr;
+        }
         const dishwasherName = APPLIANCE_NAMES[targetHaId] || targetHaId;
         
         console.log(`Attempting to start schedule ${schedule.id} on ${dishwasherName}...`);
@@ -182,6 +202,12 @@ async function handleRequest(request) {
           scheduled_time: schedule.scheduled_time,
         });
         
+        // Used by every re-scheduling path below (coffee steps and the
+        // dishwasher "not ready yet" waits alike).
+        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+        const host = request.headers.get('host');
+        const webhookUrl = `${protocol}://${host}/api/process-queue`;
+
         // Call the appropriate API based on the device type/ID
         if (targetHaId === COFFEE_ID) {
           const isBrewOnly = schedule.program_key === 'coffee.brew_only';
@@ -193,14 +219,10 @@ async function handleRequest(request) {
           const step = rawStep === 'PRESS_RETRY' ? 'PRESS' : rawStep;
           console.log(`COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) step=${step} for ${dishwasherName}...`);
 
-          const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
-          const host = request.headers.get('host');
-          const webhookUrl = `${protocol}://${host}/api/process-queue`;
-
           // IMPORTANT: persist next-step state BEFORE the slow device call,
           // so a Netlify timeout mid-call doesn't strand the row in 'processing'.
           if (step === 'POWER_ON') {
-            const nextTime = new Date(Date.now() + 60000).toISOString();
+            const nextTime = new Date(Date.now() + COFFEE_POWER_ON_DELAY_MS).toISOString();
             const { error: rescheduleErr } = await supabase
               .from('schedules')
               .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=PRESS]' })
@@ -313,15 +335,37 @@ async function handleRequest(request) {
               throw doorErr;
             }
 
-            // Remote Start not ready yet → reschedule +45s instead of waiting inline
+            // Remote Start not ready yet → reschedule +45s instead of waiting inline.
+            // Bounded: a dishwasher whose "remote start" button was never pressed
+            // would otherwise loop here forever, silently, sending power-on every
+            // cycle and never surfacing a failure.
             if (remoteStartAllowed !== true) {
-              console.warn(`Remote Start not ready (${remoteStartAllowed}). Rescheduling +45s...`);
-              const retryTime = new Date(Date.now() + 45000).toISOString();
+              const waitAttempt = (Number(schedule.last_error?.match(/\[WAITING_REMOTE_START:(\d+)\]/)?.[1]) || 0) + 1;
+
+              if (waitAttempt > REMOTE_START_MAX_WAITS) {
+                const waitErr = new Error(`${dishwasherName}: ההפעלה מרחוק לא אושרה במכשיר (Remote Start) אחרי ${REMOTE_START_MAX_WAITS} ניסיונות. יש ללחוץ על כפתור ההפעלה מרחוק במדיח.`);
+                waitErr.errorType = 'REMOTE_START_NOT_ALLOWED';
+                throw waitErr;
+              }
+
+              console.warn(`Remote Start not ready (${remoteStartAllowed}). Rescheduling +45s (attempt ${waitAttempt})...`);
+              const retryTime = new Date(Date.now() + REMOTE_START_WAIT_MS).toISOString();
               await supabase
                 .from('schedules')
-                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[WAITING_REMOTE_START] got=${remoteStartAllowed}` })
+                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[WAITING_REMOTE_START:${waitAttempt}] got=${remoteStartAllowed}` })
                 .eq('id', schedule.id);
-              results.push({ id: schedule.id, status: 'rescheduled', reason: 'waiting_remote_start' });
+              // The 5-minute reconciliation cron would eventually re-pick this
+              // row, but that turns a 45-second wait into a 5-minute one; hand
+              // it to QStash for the fast path as well.
+              await safeScheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_remote_start_wait' });
+              await logScheduleEvent(schedule.id, 'dishwasher.waiting_remote_start', {
+                attempt: waitAttempt,
+                max_attempts: REMOTE_START_MAX_WAITS,
+                remote_start_allowed: remoteStartAllowed,
+                operation_state: operationState,
+                next_time: retryTime,
+              });
+              results.push({ id: schedule.id, status: 'rescheduled', reason: 'waiting_remote_start', attempt: waitAttempt });
               continue;
             }
 
@@ -330,13 +374,27 @@ async function handleRequest(request) {
             const availablePrograms = await getAvailablePrograms(targetHaId);
 
             if (!availablePrograms || availablePrograms.length === 0) {
-              console.warn('No programs available yet. Rescheduling +30s...');
-              const retryTime = new Date(Date.now() + 30000).toISOString();
+              const waitAttempt = (Number(schedule.last_error?.match(/\[NO_PROGRAMS:(\d+)\]/)?.[1]) || 0) + 1;
+
+              if (waitAttempt > NO_PROGRAMS_MAX_WAITS) {
+                const progErr = new Error(`${dishwasherName}: המכשיר לא מחזיר רשימת תוכניות אחרי ${NO_PROGRAMS_MAX_WAITS} ניסיונות.`);
+                progErr.errorType = 'NO_PROGRAMS';
+                throw progErr;
+              }
+
+              console.warn(`No programs available yet. Rescheduling +30s (attempt ${waitAttempt})...`);
+              const retryTime = new Date(Date.now() + NO_PROGRAMS_WAIT_MS).toISOString();
               await supabase
                 .from('schedules')
-                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[NO_PROGRAMS] programs list empty` })
+                .update({ status: 'pending', scheduled_time: retryTime, last_error: `[NO_PROGRAMS:${waitAttempt}] programs list empty` })
                 .eq('id', schedule.id);
-              results.push({ id: schedule.id, status: 'rescheduled', reason: 'no_programs' });
+              await safeScheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_no_programs_wait' });
+              await logScheduleEvent(schedule.id, 'dishwasher.waiting_programs', {
+                attempt: waitAttempt,
+                max_attempts: NO_PROGRAMS_MAX_WAITS,
+                next_time: retryTime,
+              });
+              results.push({ id: schedule.id, status: 'rescheduled', reason: 'no_programs', attempt: waitAttempt });
               continue;
             }
 
@@ -373,86 +431,95 @@ async function handleRequest(request) {
         results.push({ id: schedule.id, status: 'completed' });
 
       } catch (error) {
-        const errorType = error.errorType || 'UNKNOWN';
-        console.error(`Failed to execute schedule ${schedule.id} [${errorType}]:`, error.message);
-        await logScheduleEvent(schedule.id, 'schedule.failed', {
-          error_type: errorType,
-          message: error.message,
-          switchbot_response: error.switchbotResponse,
-        });
+        // A failure inside this handler (a QStash throw, a Supabase hiccup)
+        // used to escape the loop and skip every remaining schedule in the
+        // run. Contain it: the row stays 'processing' and the stuck-row
+        // cleanup at the top of the next run returns it to 'pending'.
+        try {
+          const errorType = error.errorType || 'UNKNOWN';
+          console.error(`Failed to execute schedule ${schedule.id} [${errorType}]:`, error.message);
+          await logScheduleEvent(schedule.id, 'schedule.failed', {
+            error_type: errorType,
+            message: error.message,
+            switchbot_response: error.switchbotResponse,
+          });
 
-        const newRetryCount = schedule.retry_count + 1;
-        const isCoffee = schedule.appliance_id === COFFEE_ID;
-        const maxRetries = isCoffee ? COFFEE_MAX_RETRIES : DISHWASHER_MAX_RETRIES;
-        // Door open / device offline are recoverable — someone may close the
-        // door or the connection may return — so every dishwasher failure gets
-        // the full retry budget before being marked failed.
-        const newStatus = newRetryCount >= maxRetries ? 'failed' : 'pending';
+          const newRetryCount = schedule.retry_count + 1;
+          const isCoffee = schedule.appliance_id === COFFEE_ID;
+          const maxRetries = isCoffee ? COFFEE_MAX_RETRIES : DISHWASHER_RETRY_BUDGET;
+          // Door open / device offline are recoverable — someone may close the
+          // door or the connection may return — so every dishwasher failure gets
+          // the full retry budget before being marked failed.
+          const newStatus = newRetryCount >= maxRetries ? 'failed' : 'pending';
 
-        // Save structured error info to DB for dashboard display
-        const logMessage = `[${new Date().toISOString()}] [${errorType}] ${error.message}`;
-        const updates = {
-          retry_count: newRetryCount,
-          last_error: logMessage,
-          status: newStatus
-        };
+          // Save structured error info to DB for dashboard display
+          const logMessage = `[${new Date().toISOString()}] [${errorType}] ${error.message}`;
+          const updates = {
+            retry_count: newRetryCount,
+            last_error: logMessage,
+            status: newStatus
+          };
 
-        if (isCoffee && newStatus === 'pending') {
-          // Always keep the current step marker on coffee errors — losing it
-          // restarts the sequence from POWER_ON, which toggles power again.
-          const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-          const isBrewOnly = schedule.program_key === 'coffee.brew_only';
-          const currentStep = currentStepMatch ? currentStepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
-          updates.last_error = `[COFFEE_STEP=${currentStep}] ${logMessage}`;
+          if (isCoffee && newStatus === 'pending') {
+            // Always keep the current step marker on coffee errors — losing it
+            // restarts the sequence from POWER_ON, which toggles power again.
+            const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
+            const isBrewOnly = schedule.program_key === 'coffee.brew_only';
+            const currentStep = currentStepMatch ? currentStepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+            updates.last_error = `[COFFEE_STEP=${currentStep}] ${logMessage}`;
 
-          // Retry the press only when the SwitchBot API call itself failed —
-          // in that case no coffee was made, so a re-press is safe.
-          if (errorType === 'SWITCHBOT_COMMAND_FAILED') {
-            const retryTime = new Date(Date.now() + COFFEE_PRESS_RETRY_INTERVAL_MS).toISOString();
+            // Retry the press only when the SwitchBot API call itself failed —
+            // in that case no coffee was made, so a re-press is safe.
+            if (errorType === 'SWITCHBOT_COMMAND_FAILED') {
+              const retryTime = new Date(Date.now() + COFFEE_PRESS_RETRY_INTERVAL_MS).toISOString();
+              updates.scheduled_time = retryTime;
+
+              const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+              const host = request.headers.get('host');
+              const webhookUrl = `${protocol}://${host}/api/process-queue`;
+              // Must not throw: a throw here escapes the per-schedule catch, so
+              // this row never got its retry/status write AND every remaining
+              // schedule in the run was skipped. The row stays 'pending' at
+              // retryTime either way, so the cron still recovers it.
+              await safeScheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_switchbot_retry' });
+              await logScheduleEvent(schedule.id, 'coffee.switchbot.retry_scheduled', {
+                step: currentStep,
+                next_time: retryTime,
+                retry_count: newRetryCount,
+              });
+            }
+          } else if (!isCoffee && newStatus === 'pending') {
+            // Dishwasher retry: try again in 15 minutes (→ ~+15/+30/+45 min
+            // after the original failure). Without bumping scheduled_time the
+            // row would be retried on the very next queue run instead.
+            const retryTime = new Date(Date.now() + DISHWASHER_RETRY_INTERVAL_MS).toISOString();
             updates.scheduled_time = retryTime;
 
             const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
             const host = request.headers.get('host');
             const webhookUrl = `${protocol}://${host}/api/process-queue`;
-            await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_switchbot_retry' });
-            await logScheduleEvent(schedule.id, 'coffee.switchbot.retry_scheduled', {
-              step: currentStep,
+            // The row stays 'pending' with the retry time, so a later queue run
+            // still picks it up even if QStash scheduling failed.
+            await safeScheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_dishwasher_retry' });
+
+            await logScheduleEvent(schedule.id, 'dishwasher.retry_scheduled', {
+              error_type: errorType,
+              attempt: newRetryCount,
+              max_attempts: maxRetries,
               next_time: retryTime,
-              retry_count: newRetryCount,
             });
           }
-        } else if (!isCoffee && newStatus === 'pending') {
-          // Dishwasher retry: try again in 15 minutes (→ ~+15/+30/+45 min
-          // after the original failure). Without bumping scheduled_time the
-          // row would be retried on the very next queue run instead.
-          const retryTime = new Date(Date.now() + DISHWASHER_RETRY_INTERVAL_MS).toISOString();
-          updates.scheduled_time = retryTime;
 
-          try {
-            const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
-            const host = request.headers.get('host');
-            const webhookUrl = `${protocol}://${host}/api/process-queue`;
-            await scheduleWebhook(webhookUrl, retryTime, { schedule_id: schedule.id, source: 'qstash_dishwasher_retry' });
-          } catch (qstashError) {
-            // The row stays 'pending' with the retry time, so a later queue
-            // run still picks it up even if QStash scheduling failed.
-            console.error('Dishwasher retry QStash scheduling failed:', qstashError);
-          }
-
-          await logScheduleEvent(schedule.id, 'dishwasher.retry_scheduled', {
-            error_type: errorType,
-            attempt: newRetryCount,
-            max_attempts: maxRetries,
-            next_time: retryTime,
-          });
-        }
-
-        await supabase
-          .from('schedules')
-          .update(updates)
-          .eq('id', schedule.id);
+          await supabase
+            .from('schedules')
+            .update(updates)
+            .eq('id', schedule.id);
           
-        results.push({ id: schedule.id, status: newStatus, error: error.message, errorType });
+          results.push({ id: schedule.id, status: newStatus, error: error.message, errorType });
+        } catch (handlerError) {
+          console.error(`Error handling for schedule ${schedule.id} failed; continuing with the rest of the queue:`, handlerError);
+          results.push({ id: schedule.id, status: 'handler_error', error: error.message, handler_error: handlerError?.message });
+        }
       }
     }
 
