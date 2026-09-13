@@ -35,7 +35,7 @@ const DISHWASHER_RETRY_BUDGET = envNumber('DISHWASHER_MAX_RETRIES', DISHWASHER_M
 // How long the coffee machine gets to warm up between power-on and the brew
 // press. Too short and the press lands while the machine is still rinsing —
 // "it powered on but there was no coffee".
-const COFFEE_POWER_ON_DELAY_MS = envNumber('COFFEE_POWER_ON_DELAY_MS', 60000);
+const COFFEE_POWER_ON_DELAY_MS = envNumber('COFFEE_POWER_ON_DELAY_MS', 120000);
 const REMOTE_START_WAIT_MS = envNumber('REMOTE_START_WAIT_MS', 45000);
 const REMOTE_START_MAX_WAITS = envNumber('REMOTE_START_MAX_WAITS', 20);
 const NO_PROGRAMS_WAIT_MS = envNumber('NO_PROGRAMS_WAIT_MS', 30000);

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getFingerbotDiagnostics, triggerFingerbot } from '@/lib/tuya';
+import { getBotStatus, pressBot } from '@/lib/switchbot';
 
 // Read-only Fingerbot diagnostics, meant to be opened from a phone browser:
 //   /api/debug/fingerbot?key=YOUR_CRON_SECRET
-// Add &press=1 to actually send one test click.
+// Add &press=1 to actually send one test click (Fingerbot = power button),
+// or &brew=1 to send one SwitchBot click (the brew button).
 //
 // Tells you the two things that matter when "the app can't move the arm":
 //   - online:  can the Tuya cloud (and therefore our automation) reach it?
@@ -40,6 +42,24 @@ export async function GET(request) {
         .catch((e) => `failed: ${e.message}`);
     }
 
+    // The brew button. Its battery is the number that explains a "press
+    // succeeded but no coffee came out": a weak arm stalls while the cloud
+    // still reports statusCode 100.
+    let switchbot = null;
+    try {
+      const status = await getBotStatus(process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498');
+      switchbot = { battery: status.battery ?? null, mode: status.deviceMode ?? null, power: status.power ?? null };
+    } catch (e) {
+      switchbot = { error: e.message };
+    }
+
+    let brewTest = null;
+    if (url.searchParams.get('brew') === '1') {
+      brewTest = await pressBot(process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498')
+        .then(() => 'brew click sent — watch the machine')
+        .catch((e) => `failed: ${e.message}`);
+    }
+
     const configuredDp = process.env.TUYA_FINGERBOT_DP_CODE || 'switch_1';
     const dpIsValid = dpCodes.some((d) => d.code === configuredDp);
 
@@ -51,6 +71,8 @@ export async function GET(request) {
       dp_codes_you_can_send: dpCodes,
       current_status: diag.status,
       press_test: pressTest,
+      switchbot_brew_button: switchbot,
+      brew_test: brewTest,
       hint:
         diag.online === false
           ? 'OFFLINE to the cloud — the automation cannot reach it. Check the Bluetooth gateway / that this is the right device.'

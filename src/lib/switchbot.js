@@ -93,3 +93,34 @@ export async function getSwitchBotDevices() {
 
   return await response.json();
 }
+
+/**
+ * Reads a Bot's own status: battery level, press/switch mode and power state.
+ *
+ * Why this matters: `pressBot` returning statusCode 100 only proves the CLOUD
+ * accepted the command — not that the arm physically moved. A Bot with a dying
+ * battery (or knocked into switchMode) reports success while the coffee button
+ * is never actually pressed. That is exactly the "success in the log, no coffee
+ * in the cup" failure. Battery is the one number that predicts it in advance.
+ */
+export async function getBotStatus(deviceId) {
+  const headers = getAuthHeaders();
+
+  const response = await fetch(`${API_URL}/devices/${deviceId}/status`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`SwitchBot API error: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  const data = await response.json();
+
+  if (data.statusCode !== 100) {
+    throw new Error(`SwitchBot status failed: statusCode=${data.statusCode}, message=${data.message || 'unknown'}`);
+  }
+
+  return data.body || {};
+}

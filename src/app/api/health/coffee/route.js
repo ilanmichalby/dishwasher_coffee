@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getFingerbotDiagnostics } from '@/lib/tuya';
+import { getBotStatus } from '@/lib/switchbot';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
 // Pre-Shabbat coffee health check.
@@ -16,6 +17,12 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
 const LOOKAHEAD_MS = 48 * 60 * 60 * 1000; // catch this Shabbat's coffee
+// Below this the arm can stall mid-press while the API still reports success —
+// "coffee.press.success in the log, no coffee in the cup". Warn while there is
+// still time to swap the batteries.
+const MIN_BOT_BATTERY = Number(process.env.SWITCHBOT_MIN_BATTERY) > 0
+  ? Number(process.env.SWITCHBOT_MIN_BATTERY)
+  : 25;
 
 export const dynamic = 'force-dynamic';
 
@@ -55,23 +62,54 @@ export async function GET(request) {
     deviceError = e.message;
   }
 
-  // Only worth an alert when a coffee is coming AND we can't confirm the device
-  // is online. If nothing is scheduled, an offline gateway isn't urgent yet.
-  const healthy = !needsCoffee || online === true;
+  // The brew button itself: is the SwitchBot reachable, in press mode, and
+  // does it still have the battery to actually push?
+  let bot = null;
+  let botError = null;
+  try {
+    const status = await getBotStatus(process.env.SWITCHBOT_COFFEE_DEVICE_ID || 'E8158ABAA498');
+    bot = {
+      battery: status.battery ?? null,
+      mode: status.deviceMode ?? null,
+      power: status.power ?? null,
+    };
+  } catch (e) {
+    botError = e.message;
+  }
+
+  const botBatteryLow = bot?.battery != null && bot.battery < MIN_BOT_BATTERY;
+  // switchMode makes the arm hold a position instead of clicking — the command
+  // succeeds and nothing gets brewed.
+  const botWrongMode = bot?.mode != null && bot.mode !== 'pressMode';
+
+  // Only worth an alert when a coffee is coming AND something on the path from
+  // the cloud to the button is not confirmably in order. If nothing is
+  // scheduled, an offline gateway isn't urgent yet.
+  const healthy = !needsCoffee || (online === true && !botBatteryLow && !botWrongMode && !botError);
 
   const body = {
     healthy,
     fingerbot_online: online,
     device_error: deviceError,
     db_error: dbError ? dbError.message : null,
+    switchbot: bot,
+    switchbot_error: botError,
+    switchbot_battery_low: botBatteryLow,
+    switchbot_wrong_mode: botWrongMode,
     upcoming_coffee_count: upcomingCoffee.length,
     next_coffee: upcomingCoffee[0]?.scheduled_time || null,
     checked_at: now.toISOString(),
     message: healthy
       ? (needsCoffee
-          ? 'Coffee scheduled and the Fingerbot is online — good to go.'
+          ? 'Coffee scheduled, Fingerbot online and the SwitchBot can press — good to go.'
           : 'No coffee scheduled in the next 48h — nothing to check.')
-      : 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway and confirm it reconnects to WiFi BEFORE Shabbat.',
+      : online !== true
+        ? 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway and confirm it reconnects to WiFi BEFORE Shabbat.'
+        : botBatteryLow
+          ? `Coffee is scheduled but the SwitchBot battery is at ${bot.battery}%. Replace it before Shabbat — a weak arm reports success without pressing.`
+          : botWrongMode
+            ? `Coffee is scheduled but the SwitchBot is in "${bot.mode}", not pressMode — it will hold instead of clicking. Fix it in the SwitchBot app.`
+            : `Coffee is scheduled but the SwitchBot status could not be read: ${botError}`,
   };
 
   return NextResponse.json(body, { status: healthy ? 200 : 503 });
