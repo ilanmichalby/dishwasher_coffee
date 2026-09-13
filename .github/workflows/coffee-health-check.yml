@@ -71,3 +71,30 @@ jobs:
 
           echo "UNHEALTHY — a dishwasher run is scheduled but the appliance is not ready." >&2
           exit 1
+
+      - name: Send failure alert email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SERVER }}
+          server_port: ${{ secrets.EMAIL_PORT }}
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "⚠️ לפני שבת: משהו לא מוכן (קפה/מדיח)"
+          to: ilanmichalby@gmail.com
+          from: ${{ secrets.EMAIL_FROM }}
+          body: |
+            בדיקת יום שישי מצאה בעיה שתמנע הפעלה בשבת.
+
+            פירוט מלא (מה בדיוק נכשל):
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            מה זה בדרך כלל, ומה לעשות עכשיו:
+            - Fingerbot אופליין  -> לאתחל את שער ה-Tuya ולוודא שהוא חוזר ל-WiFi.
+            - סוללת SwitchBot נמוכה -> להחליף סוללה.
+            - SwitchBot לא ב-pressMode -> לתקן באפליקציית SwitchBot.
+            - מדיח מנותק -> לבדוק WiFi ולהפעיל "חיבור רשת קבוע" בתפריט המדיח.
+            - דלת פתוחה -> לסגור.
+            - הפעלה מרחוק לא מאושרת -> ללחוץ על הכפתור בלוח המדיח.
+
+            יש עדיין זמן לתקן. בשבת כבר לא.
