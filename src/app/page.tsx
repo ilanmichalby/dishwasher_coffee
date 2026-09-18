@@ -13,6 +13,7 @@ import { ScheduleTable } from "@/components/dashboard/schedule-table";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { FloatingNav } from "@/components/dashboard/floating-nav";
 import { AutomationHealthCheck } from "@/components/dashboard/automation-health-check";
+import { CheckAndPrint } from "@/components/dashboard/check-and-print";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Power } from 'lucide-react';
 import { VoiceCommandBar } from "@/components/dashboard/voice-command-bar";
@@ -484,6 +485,11 @@ export default function SmartHomeDashboard() {
               <RecentActivity activity={mappedActivity} />
             </section>
           </div>
+        </div>
+
+        {/* Verify, then print the sheet that goes on the fridge. */}
+        <div className="mt-10 flex justify-end print:hidden">
+          <CheckAndPrint />
         </div>
 
         {/* Print Only Section */}

@@ -41,6 +41,60 @@ async function checkScheduleConflict(applianceId, scheduledTime, excludeId = nul
   return null;
 }
 
+// --- pre-Shabbat verification, anchored to YOUR scheduling session ----------
+//
+// The whole Shabbat/chag gets scheduled in one sitting, 1 to 1.5 hours before
+// candle lighting. That sitting is the only reliable clock in this system: a
+// fixed cron ran hours earlier, saw an empty queue, said "nothing to check",
+// and reported green while the Fingerbot was already offline (2026-09-18).
+//
+// So: the FIRST schedule of a session enqueues ONE verification for 45 minutes
+// later. By then the sitting is over and the queue is complete, and because you
+// schedule 1h+ before candle lighting, it always lands while there is still
+// time to reboot a gateway — in summer, in winter, on Shabbat and on chag,
+// without anyone having to know when candle lighting is.
+const SESSION_WINDOW_MS = 30 * 60 * 1000; // a new sitting starts after 30 min of quiet
+const VERIFY_DELAY_MS = 45 * 60 * 1000;
+
+// True when nothing else was created in the last 30 minutes, i.e. this insert
+// opens a new sitting rather than continuing one already covered.
+async function isFirstOfSession(excludeId) {
+  const since = new Date(Date.now() - SESSION_WINDOW_MS).toISOString();
+  const { data, error } = await supabase
+    .from('schedules')
+    .select('id')
+    .gte('created_at', since)
+    .neq('id', excludeId)
+    .limit(1);
+
+  if (error) {
+    // Unknown means "assume it is the first" — a duplicate check is cheap, a
+    // missing one is the bug we are fixing.
+    console.error('Session detection failed, verifying anyway:', error.message);
+    return true;
+  }
+  return !data || data.length === 0;
+}
+
+async function enqueueSessionVerification(request, scheduleId) {
+  try {
+    if (!(await isFirstOfSession(scheduleId))) return null;
+
+    const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+    const host = request.headers.get('host');
+    const verifyUrl = `${protocol}://${host}/api/health/pre-shabbat?notify=1`;
+    const runAt = new Date(Date.now() + VERIFY_DELAY_MS).toISOString();
+
+    await scheduleWebhook(verifyUrl, runAt, { source: 'session_verification' });
+    console.log(`Pre-Shabbat verification enqueued for ${runAt}`);
+    return runAt;
+  } catch (e) {
+    // Never fail a schedule because its safety net could not be armed.
+    console.error('Could not enqueue pre-Shabbat verification:', e.message);
+    return null;
+  }
+}
+
 export async function POST(request) {
   try {
     const { scheduled_time, program_key, appliance_id } = await request.json();
@@ -80,6 +134,10 @@ export async function POST(request) {
     const host = request.headers.get('host');
     const webhookUrl = `${protocol}://${host}/api/process-queue`;
 
+    // Arm the session-anchored verification before reporting back, so the
+    // response can tell the UI whether a follow-up check is coming.
+    const verificationAt = await enqueueSessionVerification(request, scheduleId);
+
     try {
       const qstashResult = await scheduleWebhook(webhookUrl, scheduled_time, {
         schedule_id: scheduleId,
@@ -90,14 +148,16 @@ export async function POST(request) {
         return NextResponse.json({ 
           message: 'נשמר במסד הנתונים, אך התזמון נכשל (חסר QSTASH_TOKEN)', 
           id: scheduleId,
-          qstash: false 
+          qstash: false,
+          verification_at: verificationAt
         }, { status: 200 }); // Still 200 because DB record exists
       }
 
       return NextResponse.json({ 
         message: 'Scheduled successfully', 
         id: scheduleId,
-        qstash: true 
+        qstash: true,
+        verification_at: verificationAt
       });
     } catch (qstashError) {
       console.error('QStash scheduling failed, but record saved to DB:', qstashError);

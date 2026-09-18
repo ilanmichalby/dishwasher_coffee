@@ -76,47 +76,80 @@
     direction: rtl;
   }
 
-  /* Print Styles */
+  /* Print Styles
+   *
+   * The printed page is taped to the fridge for Shabbat, so it has to be the
+   * table and nothing else, on exactly one sheet.
+   *
+   * This hides everything EXCEPT .print-only and the chain of ancestors that
+   * contains it. The previous version listed what to hide by class name —
+   * .SummaryCards, .DishwasherCard, .FloatingNav and friends — but those are
+   * React component names, not CSS classes, and none of them existed in the
+   * DOM. So nothing was hidden, the summary cards printed above the table, and
+   * the table spilled onto a second page. Do NOT go back to enumerating what to
+   * hide: every component added later would silently start printing again. An
+   * allow-list of one wins here.
+   *
+   * It must be `display`, not `visibility`. `visibility: hidden !important` was
+   * measured against the live DOM and leaked 16 elements: the cards and buttons
+   * carry Tailwind's `transition-all`, and a CSS transition outranks even an
+   * !important author declaration in the cascade, so the transitioned
+   * `visibility` kept winning. `display` is not on those transitions, and the
+   * :has() ancestor exemption is what lets a deeply nested .print-only survive
+   * while its siblings disappear.
+   */
   @media print {
     @page {
+      size: A4 portrait;
       margin: 1cm;
     }
+
+    body *:not(:has(.print-only)):not(.print-only):not(.print-only *) {
+      display: none !important;
+    }
+
+    .print-only {
+      display: block !important;
+      position: absolute !important;
+      top: 0 !important;
+      right: 0 !important;
+      left: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+      color: black !important;
+    }
+
     body {
       background: white !important;
       color: black !important;
       padding: 0 !important;
-    }
-    .container {
-      max-width: 100% !important;
-      padding: 0 !important;
       margin: 0 !important;
     }
-    header, .SummaryCards, .DishwasherCard, .CoffeeMachineCard, nav, .FloatingNav, button, .glass-card, section:not(.ScheduleTableSection) {
-      display: none !important;
-    }
-    
-    .print-only {
-      display: block !important;
-    }
 
-    .ScheduleTable {
-      display: block !important;
-      background: white !important;
-      color: black !important;
-      border: 1px solid black !important;
-      width: 100% !important;
-    }
-
-    table {
+    /* Keep it on one sheet: compact type, and never split a row across pages. */
+    .print-only table {
       width: 100% !important;
       border-collapse: collapse !important;
       direction: rtl !important;
+      font-size: 11pt !important;
     }
 
-    th, td {
+    .print-only th,
+    .print-only td {
       border: 1px solid black !important;
-      padding: 8px !important;
+      padding: 4px 6px !important;
       text-align: right !important;
+      color: black !important;
+      page-break-inside: avoid !important;
+    }
+
+    .print-only thead {
+      display: table-header-group !important;
+    }
+
+    .print-only h1 {
+      font-size: 15pt !important;
+      margin: 0 0 8px !important;
       color: black !important;
     }
   }
