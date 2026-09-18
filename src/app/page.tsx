@@ -357,6 +357,32 @@ export default function SmartHomeDashboard() {
     })
     .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime());
 
+  // --- the sheet that goes on the fridge -----------------------------------
+  // Read across the room, on Shabbat, by someone who cannot touch a phone. So:
+  // the time is the biggest thing on the row, days are grouped under a heading,
+  // and the raw program keys become words.
+  const PROGRAM_LABELS: Record<string, string> = {
+    'Dishcare.Dishwasher.Program.Quick65': 'מהיר 65°',
+    'Dishcare.Dishwasher.Program.Intensiv70': 'אינטנסיבי 70°',
+    'Dishcare.Dishwasher.Program.Eco50': 'חסכוני 50°',
+    'Dishcare.Dishwasher.Program.Auto2': 'אוטומטי',
+    'coffee.full': 'הדלקה, הכנה וכיבוי',
+    'coffee.brew_only': 'הכנה בלבד',
+  };
+
+  const programLabel = (key?: string) =>
+    (key && PROGRAM_LABELS[key]) || key?.split('.').pop() || '—';
+
+  const printGroups = printSchedules.reduce((acc: { label: string; items: typeof printSchedules }[], s) => {
+    const label = new Date(s.scheduled_time).toLocaleDateString('he-IL', {
+      weekday: 'long', day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem',
+    });
+    const group = acc.find(g => g.label === label);
+    if (group) group.items.push(s);
+    else acc.push({ label, items: [s] });
+    return acc;
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen bg-slate-950">
@@ -397,7 +423,11 @@ export default function SmartHomeDashboard() {
           <VoiceCommandBar onScheduleSuccess={fetchData} />
         </div>
 
-        <div className="flex justify-end mt-6">
+        {/* Top toolbar. "בדוק והדפס" lives here because it is the last thing
+            done before Shabbat, and hunting for it at the bottom of a long
+            dashboard is exactly when it gets skipped. */}
+        <div className="flex flex-wrap items-start justify-end gap-3 mt-6 print:hidden">
+          <CheckAndPrint />
           <Button 
             variant="outline" 
             size="sm" 
@@ -487,38 +517,48 @@ export default function SmartHomeDashboard() {
           </div>
         </div>
 
-        {/* Verify, then print the sheet that goes on the fridge. */}
-        <div className="mt-10 flex justify-end print:hidden">
-          <CheckAndPrint />
-        </div>
+        {/* The sheet for the fridge. See globals.css for why this is the only
+            thing that survives @media print. */}
+        <div className="print-only hidden">
+          <header className="print-head">
+            <h1>לוח הפעלות</h1>
+            <p className="print-sub">
+              {printGroups.length > 0
+                ? `${printGroups[0].label} — ${printGroups[printGroups.length - 1].label}`
+                : 'אין תזמונים קרובים'}
+            </p>
+          </header>
 
-        {/* Print Only Section */}
-        <div className="print-only mt-8 hidden">
-          <h1 className="text-2xl font-bold mb-4 text-black text-center">תזמונים ל-3 הימים הקרובים</h1>
           {printSchedules.length === 0 ? (
-            <p className="text-black text-center">אין תזמונים קרובים ל-3 הימים הבאים.</p>
+            <p className="print-empty">אין תזמונים ל-3 הימים הקרובים.</p>
           ) : (
-            <table className="w-full border-collapse border border-black">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-black p-2 text-right text-black">מכשיר</th>
-                  <th className="border border-black p-2 text-right text-black">תאריך</th>
-                  <th className="border border-black p-2 text-right text-black">שעה</th>
-                  <th className="border border-black p-2 text-right text-black">תוכנית</th>
-                </tr>
-              </thead>
-              <tbody>
-                {printSchedules.map((schedule) => (
-                  <tr key={schedule.id}>
-                    <td className="border border-black p-2 text-black">{APPLIANCE_NAMES[schedule.appliance_id] || 'מכשיר'}</td>
-                    <td className="border border-black p-2 text-black">{new Date(schedule.scheduled_time).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' })}</td>
-                    <td className="border border-black p-2 text-black">{new Date(schedule.scheduled_time).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}</td>
-                    <td className="border border-black p-2 text-black">{schedule.program_key?.split('.').pop()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            printGroups.map(group => (
+              <section key={group.label} className="print-day">
+                <h2>{group.label}</h2>
+                <table>
+                  <tbody>
+                    {group.items.map(schedule => (
+                      <tr key={schedule.id}>
+                        <td className="print-time">
+                          {new Date(schedule.scheduled_time).toLocaleTimeString('he-IL', {
+                            hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem',
+                          })}
+                        </td>
+                        <td className="print-appliance">
+                          {APPLIANCE_NAMES[schedule.appliance_id] || 'מכשיר'}
+                        </td>
+                        <td className="print-program">{programLabel(schedule.program_key)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            ))
           )}
+
+          <footer className="print-foot">
+            הופק {new Date().toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}
+          </footer>
         </div>
       </div>
 

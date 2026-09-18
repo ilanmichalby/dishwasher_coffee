@@ -101,56 +101,133 @@
   @media print {
     @page {
       size: A4 portrait;
-      margin: 1cm;
+      margin: 1.4cm 1.2cm;
     }
 
     body *:not(:has(.print-only)):not(.print-only):not(.print-only *) {
       display: none !important;
     }
 
-    .print-only {
-      display: block !important;
-      position: absolute !important;
-      top: 0 !important;
-      right: 0 !important;
-      left: 0 !important;
+    /* The surviving ancestor chain carries min-h-screen and pb-24. Left alone
+     * it keeps reserving a full viewport of height, which prints as a blank
+     * second page even when the sheet itself is short. Collapse the chain and
+     * let .print-only sit in normal flow — absolute positioning took it out of
+     * flow and hid this from the earlier measurement. */
+    html,
+    body,
+    body *:has(.print-only) {
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
       margin: 0 !important;
-      width: 100% !important;
-      color: black !important;
-    }
-
-    body {
+      padding: 0 !important;
+      position: static !important;
+      overflow: visible !important;
       background: white !important;
       color: black !important;
-      padding: 0 !important;
-      margin: 0 !important;
     }
 
-    /* Keep it on one sheet: compact type, and never split a row across pages. */
-    .print-only table {
+    .print-only {
+      display: block !important;
+      width: 100% !important;
+      color: #000 !important;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+    }
+
+    /* Masthead ------------------------------------------------------------ */
+    .print-head {
+      border-bottom: 2.5pt solid #000 !important;
+      padding-bottom: 6pt !important;
+      margin-bottom: 14pt !important;
+      text-align: center !important;
+    }
+
+    .print-head h1 {
+      font-size: 26pt !important;
+      font-weight: 800 !important;
+      letter-spacing: -0.5pt !important;
+      margin: 0 !important;
+      color: #000 !important;
+    }
+
+    .print-sub {
+      font-size: 11pt !important;
+      color: #444 !important;
+      margin: 3pt 0 0 !important;
+    }
+
+    /* One block per day --------------------------------------------------- */
+    .print-day {
+      margin-bottom: 13pt !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+
+    .print-day h2 {
+      font-size: 13pt !important;
+      font-weight: 700 !important;
+      margin: 0 0 4pt !important;
+      padding: 2pt 6pt !important;
+      background: #ececec !important;
+      border-right: 4pt solid #000 !important;
+      color: #000 !important;
+      /* backgrounds are dropped by default in print dialogs */
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .print-day table {
       width: 100% !important;
       border-collapse: collapse !important;
       direction: rtl !important;
-      font-size: 11pt !important;
     }
 
-    .print-only th,
-    .print-only td {
-      border: 1px solid black !important;
-      padding: 4px 6px !important;
+    .print-day td {
+      padding: 5pt 6pt !important;
+      border-bottom: 0.5pt solid #bbb !important;
       text-align: right !important;
-      color: black !important;
+      color: #000 !important;
       page-break-inside: avoid !important;
     }
 
-    .print-only thead {
-      display: table-header-group !important;
+    .print-day tr:last-child td {
+      border-bottom: none !important;
     }
 
-    .print-only h1 {
-      font-size: 15pt !important;
-      margin: 0 0 8px !important;
-      color: black !important;
+    /* The time is what you read from across the kitchen. */
+    .print-time {
+      font-size: 17pt !important;
+      font-weight: 700 !important;
+      font-variant-numeric: tabular-nums !important;
+      width: 4.2cm !important;
+      white-space: nowrap !important;
+    }
+
+    .print-appliance {
+      font-size: 13pt !important;
+      font-weight: 600 !important;
+    }
+
+    .print-program {
+      font-size: 10.5pt !important;
+      color: #555 !important;
+      text-align: left !important;
+      white-space: nowrap !important;
+    }
+
+    .print-empty {
+      font-size: 13pt !important;
+      text-align: center !important;
+      padding: 20pt 0 !important;
+    }
+
+    .print-foot {
+      margin-top: 10pt !important;
+      padding-top: 5pt !important;
+      border-top: 0.5pt solid #ccc !important;
+      font-size: 8.5pt !important;
+      color: #777 !important;
+      text-align: center !important;
     }
   }
 
