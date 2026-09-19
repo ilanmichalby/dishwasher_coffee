@@ -133,6 +133,27 @@ export async function POST(request) {
   }
 
   const params = new URL(request.url).searchParams;
+
+  // `selftest=1` proves the alert channel itself still works, without waiting
+  // for something to break. This exists because the previous alert path — an
+  // SMTP step whose EMAIL_* secrets were never set — sat broken for a month:
+  // it only ran under if:failure(), nothing had failed, so nobody learned that
+  // it could not send. A channel you cannot test is a channel you cannot trust,
+  // and a Telegram bot token can be revoked at any time without notice.
+  if (params.get('selftest') === '1') {
+    const result = await notifyViaTelegram(
+      ['זו הודעת בדיקה — הכל תקין, לא נדרשת שום פעולה.'],
+      [],
+    );
+    return NextResponse.json({
+      selftest: true,
+      ...result,
+      message: result.notified
+        ? 'נשלחה הודעת בדיקה לטלגרם. אם היא לא הגיעה, הבעיה היא ב-CHAT_ID.'
+        : `הערוץ לא פעיל: ${result.error}`,
+      checked_at: new Date().toISOString(),
+    }, { status: result.notified ? 200 : 503 });
+  }
   // The scheduled verification notifies and is strict; the button does
   // neither — you are standing in front of the screen, still loading, and the
   // banner is the whole point.
