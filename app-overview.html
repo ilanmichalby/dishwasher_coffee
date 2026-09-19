@@ -427,22 +427,22 @@
       <div class="grid cols-4">
         <article class="card metric blue">
           <span class="muted">קבצי API</span>
-          <span class="value">7</span>
-          <span class="small muted">auth, devices, schedule, action, queue, NLP</span>
+          <span class="value">14</span>
+          <span class="small muted">auth, devices, schedule, action, queue, NLP, health, debug</span>
         </article>
         <article class="card metric green">
           <span class="muted">קומפוננטות דשבורד</span>
-          <span class="value">10</span>
+          <span class="value">12</span>
           <span class="small muted">כרטיסים, טבלאות, sheets, פקודות קול</span>
         </article>
         <article class="card metric amber">
           <span class="muted">טבלאות Supabase</span>
-          <span class="value">4</span>
-          <span class="small muted">auth, schedules, schedule_events, templates</span>
+          <span class="value">5</span>
+          <span class="small muted">auth, schedules, schedule_events, templates, health_checks</span>
         </article>
         <article class="card metric violet">
           <span class="muted">API handlers</span>
-          <span class="value">10</span>
+          <span class="value">17</span>
           <span class="small muted">GET, POST, PATCH, DELETE</span>
         </article>
       </div>
@@ -459,6 +459,20 @@
             <span class="tag ok">כרטיסי מכשירים</span>
             <span class="tag ok">טבלת תזמונים</span>
             <span class="tag ok">פרטי ריצה</span>
+          </div>
+        </article>
+        <article class="card">
+          <h3>בדיקה לפני שבת וחג</h3>
+          <p class="muted">
+            כשל שקט של מכשיר גילה את עצמו רק כשלא היה קפה בשבת. עכשיו הבדיקה נתלית באירוע היחיד
+            שאפשר לסמוך עליו: התזמון הראשון בישיבה קובע בדיקה אחת ל-45 דקות אחר כך, כשהתור כבר מלא
+            ועוד נשאר זמן לתקן. חוסם אמיתי שולח התראת טלגרם; דלת פתוחה היא תזכורת בלבד.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">תלוי-אירוע</span>
+            <span class="tag ok">קפה + מדיחים</span>
+            <span class="tag ok">טלגרם</span>
+            <span class="tag ok">חלון 72 שעות</span>
           </div>
         </article>
         <article class="card">
@@ -668,7 +682,15 @@ TUYA_CLIENT_ID
 TUYA_CLIENT_SECRET
 TUYA_FINGERBOT_DEVICE_ID
 SMARTTHINGS_TOKEN
-SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
+SMARTTHINGS_FINGERBOT_DEVICE_ID
+
+# בדיקות לפני שבת והתראות
+APP_URL
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+GITHUB_DISPATCH_TOKEN   # גיבוי בלבד, אם טלגרם לא מוגדר
+SWITCHBOT_MIN_BATTERY   # ברירת מחדל 25
+TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1</div>
     </section>
 
     <section id="flows" class="tab-panel">
@@ -735,6 +757,11 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
                   <td>schedule_id, event_type, details, created_at</td>
                 </tr>
                 <tr>
+                  <td>automation_health_checks</td>
+                  <td>תוצאות בדיקות בריאות שנשמרות לאורך זמן</td>
+                  <td>checked_at, healthy, fingerbot_online, coffee_scheduled, next_coffee, error_message</td>
+                </tr>
+                <tr>
                   <td>templates</td>
                   <td>תבניות תוכנית וזמן ברירת מחדל</td>
                   <td>name, program_key, default_time_of_day, appliance_id</td>
@@ -781,6 +808,11 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
       </div>
 
       <h2 class="section-title">API endpoints</h2>
+      <p class="muted" style="margin-bottom:12px">
+        נקודות ה-health דורשות <code>CRON_SECRET</code> או בקשה מאותו origin. עד 19.9.2026
+        <code>check-automations</code> קיבלה כל בקשה שנשאה <code>x-internal-call: true</code> — כותרת
+        שכל אחד יכול לכתוב, ולא אישור. זה נסגר.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -798,6 +830,12 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             <tr><td>/api/schedule/nlp</td><td>POST</td><td>פענוח טקסט דרך parser מקומי</td></tr>
             <tr><td>/api/action</td><td>POST</td><td>פעולות מיידיות במדיחים ובקפה</td></tr>
             <tr><td>/api/process-queue</td><td>GET, POST</td><td>עיבוד תזמונים שהגיע זמנם</td></tr>
+            <tr><td>/api/health/pre-shabbat</td><td>POST</td><td>פסק דין אחד לקפה ולמדיחים; <code>notify=1</code> שולח טלגרם, <code>strict=1</code> מחשיב דלת פתוחה כחוסם, <code>selftest=1</code> בודק את ערוץ ההתראות</td></tr>
+            <tr><td>/api/health/coffee</td><td>GET</td><td>Fingerbot, סוללת SwitchBot ומצב לחיצה מול תור הקפה</td></tr>
+            <tr><td>/api/health/dishwashers</td><td>GET</td><td>חיבור, דלת והפעלה מרחוק; מפריד חוסמים מתזכורות</td></tr>
+            <tr><td>/api/health/check-automations</td><td>POST</td><td>בדיקה ידנית מהדשבורד, נשמרת ל-automation_health_checks</td></tr>
+            <tr><td>/api/debug/fingerbot</td><td>GET</td><td>אבחון מהטלפון, כולל לחיצת בדיקה אמיתית</td></tr>
+            <tr><td>/api/debug/last-run</td><td>GET</td><td>ניתוח הריצה האחרונה לפי schedule_events</td></tr>
           </tbody>
         </table>
       </div>
@@ -805,6 +843,21 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
 
     <section id="status" class="tab-panel">
       <div class="grid cols-3">
+        <article class="card callout good">
+          <h2>בדיקה תלוית-אירוע</h2>
+          <p class="muted">
+            הקרון של יום שישי רץ שעות לפני שהתור בכלל נוצר: ב-18.9.2026 הוא החזיר
+            <code>fingerbot_online:false</code> יחד עם <code>healthy:true</code>, כי באותו רגע לא היה
+            מה לבדוק. מאז הבדיקה נקבעת מתוך ישיבת התזמון עצמה, והקרון נשאר רק כרשת ביטחון ל-QStash.
+          </p>
+          <div class="tag-row">
+            <span class="tag ok">45 דקות אחרי התזמון</span>
+            <span class="tag ok">מכסה גם חג</span>
+            <span class="tag ok">מייל SMTP הוסר</span>
+            <span class="tag ok">selftest לערוץ</span>
+          </div>
+        </article>
+
         <article class="card callout good">
           <h2>מוכן מקומית</h2>
           <p class="muted">
@@ -951,6 +1004,41 @@ SMARTTHINGS_FINGERBOT_DEVICE_ID</div>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>2026-09-19</td>
+              <td>חלון הבדיקה הורחב מ-48 ל-72 שעות. חג בן יומיים צמוד לשבת מתוזמן בישיבה אחת, ו-48 שעות ממנה לא הגיעו לריצות של היום האחרון. 72 שעות גם מיישרות קו עם דף ההדפסה, שהציג 3 ימים מלכתחילה — כך שמה שמודפס ומה שנבדק הם אותה רשימה.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-19</td>
+              <td>ההתראות עברו לטלגרם, ונוספה בדיקה עצמית לערוץ (<code>selftest=1</code>). שלב ה-SMTP ב-workflow הוסר: משתני ה-EMAIL_* שלו מעולם לא הוגדרו, הוא רץ רק תחת <code>if:failure()</code>, ולכן נשאר שבור חודש בלי שאיש ידע. <code>repository_dispatch</code> נשאר כגיבוי.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-19</td>
+              <td>הופרדו רמות חומרה: ניתוק רשת או הפעלה-מרחוק לא מאושרת מפילים ומתריעים, אבל דלת פתוחה 45 דקות לפני הנרות היא תזכורת כתומה בלבד — זה הזמן שבו מסדרים את המדיח, והתראה שבועית מיותרת מאמנת להתעלם. הבדיקה המתוזמנת שולחת <code>strict=1</code>, ושם דלת פתוחה כן חוסמת.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-19</td>
+              <td><code>check-automations</code> נסגרה. היא קיבלה כל בקשה שנשאה <code>x-internal-call: true</code> — כותרת, לא אישור — והופעלה בפועל ממחשב עם curl וללא סוד, כשכל קריאה כותבת שורה ופונה ל-Tuya. עכשיו same-origin או <code>CRON_SECRET</code>.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-18</td>
+              <td>תוקנה ההדפסה. גיליון ההדפסה הסתיר אלמנטים לפי שמות קומפוננטות React (<code>.SummaryCards</code>, <code>.DishwasherCard</code>) שלא קיימים ב-DOM, ולכן הדשבורד הודפס מעל הטבלה. העמוד השני הריק נבע מ-<code>position:absolute</code> שהוציא את הדף מהזרימה והשאיר את המעטפות עם <code>min-h-screen</code>. נמדד מול הדף האמיתי: 0 אלמנטים דולפים, 575px מתוך 1047px, עמוד אחד.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-18</td>
+              <td>דף ההדפסה עוצב מחדש — קיבוץ לפי יום, שעה גדולה בספרות בעלות רוחב אחיד, ושמות תוכניות בעברית במקום מפתחות. כפתור "בדוק והדפס" עלה לסרגל העליון ומריץ בדיקה מלאה לפני שהוא פותח את חלון ההדפסה.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
+            <tr>
+              <td>2026-09-18</td>
+              <td>הבדיקה תפסה לראשונה תקלה מראש: דלת המדיח החלבי הייתה פתוחה שעתיים לפני ריצה מתוזמנת. היא נסגרה, וכל 8 ההרצות של אותה שבת הושלמו.</td>
+              <td><span class="tag ok">אומת בשטח</span></td>
+            </tr>
             <tr>
               <td>2026-06-27</td>
               <td>נוסף פאנל "פרטי ריצה" לטבלת התזמונים: הדשבורד שולף עד 500 אירועי schedule_events אחרונים, מצמיד אותם לתזמונים, ומציג אותם בלחיצה על אייקון ברשימת הפעולות.</td>
