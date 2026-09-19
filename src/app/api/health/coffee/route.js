@@ -16,7 +16,13 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 // Auth: CRON_SECRET, via ?key= or Authorization: Bearer. No secrets returned.
 
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
-const LOOKAHEAD_MS = 48 * 60 * 60 * 1000; // catch this Shabbat's coffee
+// Lookahead is 72h, not 48h. A two-day chag adjacent to Shabbat — Rosh
+// Hashanah 2026 ran Sat-Sun — is scheduled in one Friday-afternoon sitting,
+// and 48h from that sitting stops short of the final day's runs, so the last
+// appliance in the queue was never checked. 72h also matches exactly what the
+// printed sheet shows (3 days), so the paper on the fridge and the check that
+// cleared it now describe the same set of runs.
+const LOOKAHEAD_MS = 72 * 60 * 60 * 1000;
 // Below this the arm can stall mid-press while the API still reports success —
 // "coffee.press.success in the log, no coffee in the cup". Warn while there is
 // still time to swap the batteries.
@@ -39,7 +45,7 @@ export async function GET(request) {
   const now = new Date();
   const until = new Date(now.getTime() + LOOKAHEAD_MS);
 
-  // Is there a coffee scheduled in the next 48h?
+  // Is there a coffee scheduled in the lookahead window?
   const { data: upcoming, error: dbError } = await supabase
     .from('schedules')
     .select('id, scheduled_time, program_key')
@@ -110,7 +116,7 @@ export async function GET(request) {
     message: healthy
       ? (needsCoffee
           ? 'Coffee scheduled, Fingerbot online and the SwitchBot can press — good to go.'
-          : 'No coffee scheduled in the next 48h — nothing to check.')
+          : 'No coffee scheduled in the next 72h — nothing to check.')
       : online !== true
         ? 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway and confirm it reconnects to WiFi BEFORE Shabbat.'
         : botBatteryLow

@@ -9,14 +9,20 @@ import { APPLIANCE_NAMES } from '@/lib/constants';
 // fail is visible on Friday afternoon — the appliance dropped off WiFi, the
 // door is open, or "remote start" was never armed on the panel — and every one
 // of those is a 30-second fix WHILE THERE IS STILL TIME. This reports
-// unhealthy (HTTP 503) when a dishwasher has a run scheduled in the next 48h
+// unhealthy (HTTP 503) when a dishwasher has a run scheduled in the next 72h
 // and something about it would make that run fail. The Friday GitHub Action
 // hits it and emails on 503.
 //
 // Auth: CRON_SECRET, via ?key= or Authorization: Bearer. No secrets returned.
 
 const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
-const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
+// Lookahead is 72h, not 48h. A two-day chag adjacent to Shabbat — Rosh
+// Hashanah 2026 ran Sat-Sun — is scheduled in one Friday-afternoon sitting,
+// and 48h from that sitting stops short of the final day's runs, so the last
+// appliance in the queue was never checked. 72h also matches exactly what the
+// printed sheet shows (3 days), so the paper on the fridge and the check that
+// cleared it now describe the same set of runs.
+const LOOKAHEAD_MS = 72 * 60 * 60 * 1000;
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +56,7 @@ export async function GET(request) {
       upcoming_run_count: 0,
       db_error: dbError ? dbError.message : null,
       checked_at: now.toISOString(),
-      message: 'No dishwasher runs scheduled in the next 48h — nothing to check.',
+      message: 'No dishwasher runs scheduled in the next 72h — nothing to check.',
     });
   }
 

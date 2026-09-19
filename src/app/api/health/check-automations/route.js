@@ -35,7 +35,8 @@ export async function POST(request) {
     }
 
     const now = new Date();
-    const until = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    // 72h — see the note in /api/health/coffee.
+    const until = new Date(now.getTime() + 72 * 60 * 60 * 1000);
     const COFFEE_ID = '9103117a-3163-4aa6-a4fb-b0a50acf832a';
 
     // Check for scheduled coffee
@@ -93,7 +94,7 @@ export async function POST(request) {
       message: healthy
         ? (needsCoffee
             ? 'Coffee scheduled and the Fingerbot is online — good to go. ✅'
-            : 'No coffee scheduled in the next 48h — nothing to check.')
+            : 'No coffee scheduled in the next 72h — nothing to check.')
         : 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway! 🚨',
     };
 
