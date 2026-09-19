@@ -8,6 +8,14 @@ name: Pre-Shabbat health check
 #
 # When this runs, in Israel local time — the only clock that matters here:
 #
+#   ALERTING does not happen here. /api/health/pre-shabbat sends a Telegram
+#   push directly. This workflow carries no mail step: the EMAIL_* secrets it
+#   used to reference were never set, so from the day it was added it could
+#   only ever fail with "Input required and not supplied: from" — and because
+#   it ran under if:failure() it never ran at all, so nobody found out. What
+#   actually reaches the owner is GitHub's own notification for a failed run,
+#   which needs no configuration. That is the fallback when Telegram is down.
+#
 #   PRIMARY path is not this workflow at all. The whole Shabbat/chag gets
 #   scheduled in one sitting, 1 to 1.5 hours before candle lighting, and
 #   /api/schedule enqueues a single verification for 45 minutes after that
@@ -98,31 +106,3 @@ jobs:
 
           echo "UNHEALTHY — a dishwasher run is scheduled but the appliance is not ready." >&2
           exit 1
-
-      - name: Send failure alert email
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.EMAIL_SERVER }}
-          server_port: ${{ secrets.EMAIL_PORT }}
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "⚠️ לפני שבת/חג: משהו לא מוכן (קפה/מדיח)"
-          to: ilanmichalby@gmail.com
-          from: ${{ secrets.EMAIL_FROM }}
-          body: |
-            הבדיקה מצאה בעיה שתמנע הפעלה בשבת/בחג.
-
-            פירוט מלא (מה בדיוק נכשל):
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            מה זה בדרך כלל, ומה לעשות עכשיו:
-            - Fingerbot אופליין  -> לבדוק שהשקע של שער ה-Tuya מחובר, לאתחל, ולוודא שהוא חוזר ל-WiFi.
-            - סוללת SwitchBot נמוכה -> להחליף סוללה.
-            - SwitchBot לא ב-pressMode -> לתקן באפליקציית SwitchBot.
-            - מדיח מנותק -> לבדוק WiFi ולהפעיל "חיבור רשת קבוע" בתפריט המדיח.
-            - דלת פתוחה -> לסגור.
-            - הפעלה מרחוק לא מאושרת -> ללחוץ על הכפתור בלוח המדיח.
-
-            אפשר לבדוק שוב בכל רגע מהדשבורד, בכפתור "בדוק והדפס".
-            יש עדיין זמן לתקן. בשבת כבר לא.

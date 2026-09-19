@@ -12,12 +12,25 @@ export async function POST(request) {
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
 
-    // Verify authorization - allow CRON_SECRET from GitHub Actions or direct API calls
-    // Frontend calls don't need auth (they're internal and user is already authenticated)
-    const isInternalCall = request.headers.get('x-internal-call') === 'true';
+    // Authorization: CRON_SECRET, or a same-origin browser request.
+    //
+    // This used to accept any request carrying `x-internal-call: true`, which
+    // is not a credential — it is a header anyone can type. The endpoint was
+    // reachable, and was in fact driven, from a laptop with curl and no
+    // secret, and every call writes a row and hits the Tuya API. Same-origin
+    // is still not real auth (it stops a cross-site fetch, not a deliberate
+    // curl) but it no longer advertises a bypass, and it matches
+    // /api/health/pre-shabbat. Real auth for the whole app is a separate job.
     const hasValidCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
 
-    if (!isInternalCall && !hasValidCron) {
+    const host = request.headers.get('host');
+    const origin = request.headers.get('origin') || request.headers.get('referer');
+    let sameOrigin = false;
+    if (origin && host) {
+      try { sameOrigin = new URL(origin).host === host; } catch { sameOrigin = false; }
+    }
+
+    if (!hasValidCron && !sameOrigin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

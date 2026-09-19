@@ -62,7 +62,18 @@ export async function GET(request) {
     fetchError = e.message;
   }
 
-  const problems = [];
+  // Two severities, because they demand different things of you.
+  //   blockers — will not fix themselves and need real time: an appliance off
+  //              the network, remote start never armed, a device that Bosch
+  //              will not even list. These fail the check and raise an alert.
+  //   warnings — almost certainly not a fault at all. An open door 45 minutes
+  //              before candle lighting means you are mid-load, which is
+  //              exactly when this runs. Alerting on it every single week is
+  //              how you train someone to ignore the alert that matters. The
+  //              caller decides: the manual button treats it as a reminder,
+  //              the last scheduled check treats it as a blocker.
+  const blockers = [];
+  const warnings = [];
   const report = [];
 
   // Only inspect the appliances that actually have a run coming.
@@ -82,18 +93,20 @@ export async function GET(request) {
 
     if (!device) {
       entry.error = fetchError || 'Appliance not returned by the Bosch API.';
-      problems.push(`${name}: לא נמצא ברשימת המכשירים של Bosch.`);
+      blockers.push(`${name}: לא נמצא ברשימת המכשירים של Bosch.`);
       report.push(entry);
       continue;
     }
 
     if (entry.connected === false) {
-      problems.push(`${name}: מנותק מהרשת. בדקו WiFi/ראוטר והפעילו "חיבור רשת קבוע" בתפריט המדיח.`);
+      blockers.push(`${name}: מנותק מהרשת. בדקו WiFi/ראוטר והפעילו "חיבור רשת קבוע" בתפריט המדיח.`);
     }
 
     // Door and remote-start are the other two silent killers. Both are only
     // readable when the appliance answers, so a failure here is informative,
-    // not fatal on its own.
+    // not fatal on its own. Note that remote_start_allowed was observed to
+    // stay true while the door was open, so it does not stand in for the door
+    // check — on 2026-09-18 only the explicit door check caught it.
     try {
       const status = await getDishwasherStatus(haId);
       const list = status?.status || [];
@@ -103,10 +116,10 @@ export async function GET(request) {
       entry.remote_start_allowed = remote ?? null;
 
       if (door === 'BSH.Common.EnumType.DoorState.Open') {
-        problems.push(`${name}: הדלת פתוחה. סגרו אותה לפני שבת.`);
+        warnings.push(`${name}: הדלת פתוחה — אם סיימתם לסדר, סגרו אותה.`);
       }
       if (remote === false) {
-        problems.push(`${name}: הפעלה מרחוק לא מאושרת. לחצו על כפתור ההפעלה מרחוק בלוח המדיח.`);
+        blockers.push(`${name}: הפעלה מרחוק לא מאושרת. לחצו על כפתור ההפעלה מרחוק בלוח המדיח.`);
       }
     } catch (e) {
       entry.error = e.message;
@@ -115,18 +128,27 @@ export async function GET(request) {
     report.push(entry);
   }
 
+  // `strict=1` is the last check before candle lighting: by then "still
+  // loading" is no longer a plausible excuse for an open door.
+  const strict = url.searchParams.get('strict') === '1';
+  const problems = strict ? [...blockers, ...warnings] : blockers;
   const healthy = problems.length === 0;
 
   return NextResponse.json({
     healthy,
+    strict,
     upcoming_run_count: upcomingRuns.length,
     dishwashers: report,
     problems,
+    blockers,
+    warnings,
     fetch_error: fetchError,
     db_error: dbError ? dbError.message : null,
     checked_at: now.toISOString(),
     message: healthy
-      ? 'Dishwasher runs are scheduled and every appliance is reachable and ready.'
+      ? (warnings.length > 0
+          ? `מוכן. שימו לב: ${warnings.join(' | ')}`
+          : 'Dishwasher runs are scheduled and every appliance is reachable and ready.')
       : problems.join(' | '),
   }, { status: healthy ? 200 : 503 });
 }

@@ -53,9 +53,42 @@ async function runCheck(base, path, secret) {
   }
 }
 
-// Asks the existing GitHub workflow to run and — since it will see the same
-// 503 — send the Hebrew alert email. The app itself has no mailer; this reuses
-// the one that is already wired up and already knows what to say.
+// Telegram is the primary channel: one HTTPS call, a push notification on the
+// phone rather than an email discovered after Shabbat, no SMTP, no app
+// password, and no token that quietly expires in a year. Configure
+// TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to use it.
+async function notifyViaTelegram(problems, warnings) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return { channel: 'telegram', notified: false, error: 'not_configured' };
+
+  const lines = ['⚠️ *לפני שבת/חג: משהו לא מוכן*', ''];
+  for (const p of problems) lines.push(`🔴 ${p}`);
+  for (const w of warnings) lines.push(`🟡 ${w}`);
+  lines.push('', '_יש עדיין זמן לתקן. בשבת כבר לא._');
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: lines.join('\n'), parse_mode: 'Markdown' }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Telegram sendMessage failed:', res.status, text);
+      return { channel: 'telegram', notified: false, error: `telegram_${res.status}` };
+    }
+    return { channel: 'telegram', notified: true };
+  } catch (e) {
+    console.error('Telegram sendMessage threw:', e.message);
+    return { channel: 'telegram', notified: false, error: e.message };
+  }
+}
+
+// Fallback only. Triggers the GitHub workflow, whose own failure notification
+// reaches the repo owner without any SMTP configuration. Kept because an alert
+// that silently fails to send is the exact bug this whole feature exists to
+// prevent — if Telegram is unconfigured or down, something must still shout.
 async function notifyViaGitHub(reason) {
   const token = process.env.GITHUB_DISPATCH_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY || 'ilanmichalby/dishwasher_coffee';
@@ -99,10 +132,17 @@ export async function POST(request) {
     return NextResponse.json({ error: 'CRON_SECRET is not configured' }, { status: 500 });
   }
 
+  const params = new URL(request.url).searchParams;
+  // The scheduled verification notifies and is strict; the button does
+  // neither — you are standing in front of the screen, still loading, and the
+  // banner is the whole point.
+  const wantsNotify = params.get('notify') === '1';
+  const strict = params.get('strict') === '1' || wantsNotify;
+
   const base = baseUrlFrom(request);
   const [coffee, dishwashers] = await Promise.all([
     runCheck(base, '/api/health/coffee', secret),
-    runCheck(base, '/api/health/dishwashers', secret),
+    runCheck(base, `/api/health/dishwashers${strict ? '?strict=1' : ''}`, secret),
   ]);
 
   const healthy = coffee.ok && dishwashers.ok;
@@ -111,23 +151,32 @@ export async function POST(request) {
   if (!coffee.ok) problems.push(`קפה: ${coffee.message || 'לא תקין'}`);
   if (!dishwashers.ok) problems.push(`מדיחים: ${dishwashers.message || 'לא תקין'}`);
 
-  // Only the scheduled follow-up raises an email. The button does not: you are
-  // standing in front of the screen, the banner already told you.
+  // Surfaced even when healthy, so the button can show the amber reminder.
+  const warnings = strict ? [] : (dishwashers.warnings || []);
+
   let notification = null;
-  const wantsEmail = new URL(request.url).searchParams.get('notify') === '1';
-  if (!healthy && wantsEmail) {
-    notification = await notifyViaGitHub(problems.join(' | '));
+  if (!healthy && wantsNotify) {
+    notification = await notifyViaTelegram(problems, warnings);
+    // An unconfigured or failing Telegram must not mean silence.
+    if (!notification.notified) {
+      const fallback = await notifyViaGitHub(problems.join(' | '));
+      notification = { ...notification, fallback };
+    }
   }
 
   return NextResponse.json({
     healthy,
+    strict,
     problems,
+    warnings,
     coffee,
     dishwashers,
     notification,
     checked_at: new Date().toISOString(),
     message: healthy
-      ? 'הכל מוכן — הקפה והמדיחים נבדקו ותקינים. אפשר להדפיס.'
+      ? (warnings.length > 0
+          ? `מוכן להדפסה. תזכורת: ${warnings.join(' | ')}`
+          : 'הכל מוכן — הקפה והמדיחים נבדקו ותקינים. אפשר להדפיס.')
       : problems.join(' | '),
   }, { status: healthy ? 200 : 503 });
 }

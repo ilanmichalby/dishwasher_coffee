@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Printer, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { Printer, Loader2, AlertTriangle, CheckCircle2, Info } from "lucide-react"
 
 // The last thing you do before Shabbat: verify, then print the sheet for the
 // fridge. Printing an unverified sheet is the failure we keep hitting — it
@@ -13,6 +13,7 @@ import { Printer, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react"
 interface CheckResult {
   healthy: boolean
   problems: string[]
+  warnings: string[]
   message: string
 }
 
@@ -43,6 +44,7 @@ export function CheckAndPrint() {
       setResult({
         healthy: false,
         problems: [],
+        warnings: [],
         message: err instanceof Error ? err.message : 'שגיאה בלתי צפויה',
       })
     } finally {
@@ -82,9 +84,24 @@ export function CheckAndPrint() {
       )}
 
       {result?.healthy && (
-        <div className="flex items-center gap-2 text-sm text-emerald-300">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>{result.message}</span>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2 text-sm text-emerald-300">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>מוכן — מדפיס.</span>
+          </div>
+
+          {/* Amber, not red: an open door while you are still loading is a
+              reminder, not a fault, and it does not block the print. */}
+          {result.warnings?.length > 0 && (
+            <div className="w-full max-w-md rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-right">
+              {result.warnings.map((w, i) => (
+                <div key={i} className="flex items-start justify-end gap-2 text-sm text-amber-200">
+                  <span>{w}</span>
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
