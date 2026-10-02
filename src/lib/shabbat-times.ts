@@ -12,6 +12,7 @@ export interface ShabbatTimes {
   parsha: string
   dateISO: string // the Saturday
   candleLighting: string // Friday evening, HH:MM
+  sunset: string // Friday sunset, HH:MM
   havdalah: string // Saturday night, HH:MM
 }
 

@@ -536,14 +536,22 @@ export default function SmartHomeDashboard() {
 
           {shabbat && (
             <div className="print-shabbat">
-              <div className="print-shabbat-cell">
-                <span className="print-shabbat-label">כניסת שבת</span>
-                <span className="print-shabbat-time">{shabbat.candleLighting}</span>
-              </div>
               <div className="print-shabbat-parsha">{shabbat.parsha}</div>
-              <div className="print-shabbat-cell">
-                <span className="print-shabbat-label">צאת השבת</span>
-                <span className="print-shabbat-time">{shabbat.havdalah}</span>
+              <div className="print-shabbat-row">
+                <div className="print-shabbat-cell">
+                  <span className="print-shabbat-label">כניסת שבת</span>
+                  <span className="print-shabbat-time">{shabbat.candleLighting}</span>
+                </div>
+                {shabbat.sunset && (
+                  <div className="print-shabbat-cell">
+                    <span className="print-shabbat-label">שקיעה</span>
+                    <span className="print-shabbat-time">{shabbat.sunset}</span>
+                  </div>
+                )}
+                <div className="print-shabbat-cell">
+                  <span className="print-shabbat-label">צאת השבת</span>
+                  <span className="print-shabbat-time">{shabbat.havdalah}</span>
+                </div>
               </div>
             </div>
           )}
