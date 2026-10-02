@@ -545,6 +545,7 @@
             <li>טבלת תזמונים עם סטטוסים, עריכה, מחיקה, הצגת היסטוריה ופרטי ריצה מתוך schedule_events.</li>
             <li>אזור פעילות אחרונה מתוך תזמונים שהושלמו או נכשלו.</li>
             <li>גרסת הדפסה לתזמונים הקרובים בשלושת הימים הבאים.</li>
+            <li>בגרסת ההדפסה פס עם כניסת שבת, שקיעה וצאת השבת של שבת/חג הקרוב (עד 7 ימים), מתוך הנתונים של אפליקציית שבת-ירוחם. אם אין נתונים או שהטעינה נכשלה הפס לא מודפס.</li>
           </ul>
         </article>
 
@@ -652,12 +653,13 @@
         </article>
         <article class="card">
           <h3>Integrations</h3>
-          <p class="muted">ספריות נפרדות לכל ספק: Bosch, Supabase, QStash, Tuya, SwitchBot ו-parser מקומי.</p>
+          <p class="muted">ספריות נפרדות לכל ספק: Bosch, Supabase, QStash, Tuya, SwitchBot, זמני שבת (שבת-ירוחם) ו-parser מקומי.</p>
           <div class="tag-row">
             <span class="tag">bosch.js</span>
             <span class="tag">tuya.js</span>
             <span class="tag">switchbot.js</span>
             <span class="tag">qstash.js</span>
+            <span class="tag">shabbat-times.ts</span>
             <span class="tag">nlpParser.js</span>
           </div>
         </article>
@@ -1004,6 +1006,11 @@ TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1</div>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>2026-10-02</td>
+              <td>גיליון ההדפסה מציג כניסת שבת, שקיעה וצאת השבת של השבת או החג הקרוב, מעל טבלת ההפעלות. הזמנים נקראים מקובץ ה-JSON הציבורי של אפליקציית שבת-ירוחם (<code>shabbat-times.json</code> ב-GitHub), אותו מקור שהאפליקציה עצמה קוראת, ונטענים עם פתיחת הדף ולא ברגע ההדפסה. הפס מוצג רק אם השבת בתוך 7 ימים; בכשל טעינה הוא מושמט במקום לנחש. נמדד בדפדפן: 775px מתוך 1017px, עמוד A4 אחד.</td>
+              <td><span class="tag ok">נדחף לגיט</span></td>
+            </tr>
             <tr>
               <td>2026-09-19</td>
               <td>חלון הבדיקה הורחב מ-48 ל-72 שעות. חג בן יומיים צמוד לשבת מתוזמן בישיבה אחת, ו-48 שעות ממנה לא הגיעו לריצות של היום האחרון. 72 שעות גם מיישרות קו עם דף ההדפסה, שהציג 3 ימים מלכתחילה — כך שמה שמודפס ומה שנבדק הם אותה רשימה.</td>
