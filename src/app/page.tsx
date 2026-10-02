@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { APPLIANCE_NAMES } from '@/lib/constants';
+import { fetchUpcomingShabbat, type ShabbatTimes } from '@/lib/shabbat-times';
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { SummaryCards } from "@/components/dashboard/summary-cards";
 import { DishwasherCard } from "@/components/dashboard/dishwasher-card";
@@ -84,11 +85,15 @@ export default function SmartHomeDashboard() {
   const [controlSheetOpen, setControlSheetOpen] = useState(false);
   const [selectedAppliance, setSelectedAppliance] = useState(null);
   const [editingSchedule, setEditingSchedule] = useState(null);
+  const [shabbat, setShabbat] = useState<ShabbatTimes | null>(null);
 
   useEffect(() => {
     checkAuth();
     fetchData();
     fetchDishwashers();
+    // Loaded up front, not on print: the print dialog opens 100ms after the
+    // health check and would not wait for a network round trip.
+    fetchUpcomingShabbat().then(setShabbat);
   }, []);
 
   const checkAuth = async () => {
@@ -528,6 +533,20 @@ export default function SmartHomeDashboard() {
                 : 'אין תזמונים קרובים'}
             </p>
           </header>
+
+          {shabbat && (
+            <div className="print-shabbat">
+              <div className="print-shabbat-cell">
+                <span className="print-shabbat-label">כניסת שבת</span>
+                <span className="print-shabbat-time">{shabbat.candleLighting}</span>
+              </div>
+              <div className="print-shabbat-parsha">{shabbat.parsha}</div>
+              <div className="print-shabbat-cell">
+                <span className="print-shabbat-label">צאת השבת</span>
+                <span className="print-shabbat-time">{shabbat.havdalah}</span>
+              </div>
+            </div>
+          )}
 
           {printSchedules.length === 0 ? (
             <p className="print-empty">אין תזמונים ל-3 הימים הקרובים.</p>

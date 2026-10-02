@@ -156,6 +156,46 @@
       margin: 3pt 0 0 !important;
     }
 
+    /* Shabbat entry / exit: the two numbers everything else is scheduled
+     * around, so they sit directly under the masthead. */
+    .print-shabbat {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      direction: rtl !important;
+      border: 1.5pt solid #000 !important;
+      padding: 6pt 12pt !important;
+      margin-bottom: 14pt !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+
+    .print-shabbat-cell {
+      display: flex !important;
+      align-items: baseline !important;
+      gap: 8pt !important;
+    }
+
+    .print-shabbat-label {
+      font-size: 12pt !important;
+      font-weight: 600 !important;
+      color: #000 !important;
+    }
+
+    .print-shabbat-time {
+      font-size: 22pt !important;
+      font-weight: 800 !important;
+      font-variant-numeric: tabular-nums !important;
+      color: #000 !important;
+    }
+
+    .print-shabbat-parsha {
+      font-size: 12pt !important;
+      font-weight: 700 !important;
+      color: #444 !important;
+      text-align: center !important;
+    }
+
     /* One block per day --------------------------------------------------- */
     .print-day {
       margin-bottom: 13pt !important;
