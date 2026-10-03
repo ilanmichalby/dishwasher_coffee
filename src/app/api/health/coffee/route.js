@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFingerbotDiagnostics } from '@/lib/tuya';
+import { getFingerbotDiagnostics, getPlugDiagnostics, isPlugConfigured } from '@/lib/tuya';
 import { getBotStatus } from '@/lib/switchbot';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
@@ -90,6 +90,22 @@ export async function GET(request) {
     botError = e.message;
   }
 
+  // The mains-reset plug. If it is unreachable the sequence still runs (the
+  // reset is skipped), but without it one missed Fingerbot press inverts every
+  // later run — so a configured plug that is offline is worth an alert.
+  const plugConfigured = isPlugConfigured();
+  let plugOnline = null;
+  let plugError = null;
+  if (plugConfigured) {
+    try {
+      const plug = await getPlugDiagnostics();
+      plugOnline = plug.online === true;
+    } catch (e) {
+      plugError = e.message;
+    }
+  }
+  const plugBad = plugConfigured && plugOnline !== true;
+
   const botBatteryLow = bot?.battery != null && bot.battery < MIN_BOT_BATTERY;
   // switchMode makes the arm hold a position instead of clicking — the command
   // succeeds and nothing gets brewed.
@@ -98,7 +114,7 @@ export async function GET(request) {
   // Only worth an alert when a coffee is coming AND something on the path from
   // the cloud to the button is not confirmably in order. If nothing is
   // scheduled, an offline gateway isn't urgent yet.
-  const healthy = !needsCoffee || (online === true && !botBatteryLow && !botWrongMode && !botError);
+  const healthy = !needsCoffee || (online === true && !plugBad && !botBatteryLow && !botWrongMode && !botError);
 
   const body = {
     healthy,
@@ -106,6 +122,9 @@ export async function GET(request) {
     fingerbot_last_dp_value: lastDpValue,
     device_error: deviceError,
     db_error: dbError ? dbError.message : null,
+    plug_configured: plugConfigured,
+    plug_online: plugOnline,
+    plug_error: plugError,
     switchbot: bot,
     switchbot_error: botError,
     switchbot_battery_low: botBatteryLow,
@@ -119,6 +138,8 @@ export async function GET(request) {
           : 'No coffee scheduled in the next 72h — nothing to check.')
       : online !== true
         ? 'Coffee is scheduled but the Fingerbot is OFFLINE. Reboot the Tuya gateway and confirm it reconnects to WiFi BEFORE Shabbat.'
+        : plugBad
+          ? 'Coffee is scheduled but the coffee-machine plug is OFFLINE. The mains reset will be skipped, so a single missed power press can leave the machine in the wrong state. Check the plug\'s WiFi (2.4GHz).'
         : botBatteryLow
           ? `Coffee is scheduled but the SwitchBot battery is at ${bot.battery}%. Replace it before Shabbat — a weak arm reports success without pressing.`
           : botWrongMode

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 import { getDishwashers, startDishwasherProgram, setDishwasherPowerState, getAvailablePrograms, getDishwasherStatus } from '@/lib/bosch';
-import { triggerFingerbot } from '@/lib/tuya';
+import { triggerFingerbot, isPlugConfigured, cycleCoffeePlug, ensureCoffeePlugOn } from '@/lib/tuya';
 import { pressBot } from '@/lib/switchbot';
 import { scheduleWebhook } from '@/lib/qstash';
 import { APPLIANCE_NAMES } from '@/lib/constants';
@@ -40,6 +40,9 @@ const DISHWASHER_RETRY_BUDGET = envNumber('DISHWASHER_MAX_RETRIES', DISHWASHER_M
 // press. Too short and the press lands while the machine is still rinsing —
 // "it powered on but there was no coffee".
 const COFFEE_POWER_ON_DELAY_MS = envNumber('COFFEE_POWER_ON_DELAY_MS', 120000);
+// Gap between restoring mains (the plug reset) and the Fingerbot power press,
+// so the machine has booted into standby before it is clicked.
+const COFFEE_RESET_SETTLE_MS = envNumber('COFFEE_RESET_SETTLE_MS', 20000);
 const REMOTE_START_WAIT_MS = envNumber('REMOTE_START_WAIT_MS', 45000);
 const REMOTE_START_MAX_WAITS = envNumber('REMOTE_START_MAX_WAITS', 20);
 const NO_PROGRAMS_WAIT_MS = envNumber('NO_PROGRAMS_WAIT_MS', 30000);
@@ -68,6 +71,15 @@ async function safeScheduleWebhook(url, timeIso, body) {
     console.error('QStash next-step scheduling failed (cron will recover):', err?.message || err);
     return null;
   }
+}
+
+// First step of a coffee row that has no step marker yet. A full sequence opens
+// with a mains reset when the plug is configured, so the Fingerbot's toggle
+// always starts from a machine that is known to be off; brew_only never touches
+// power at all.
+function defaultCoffeeStep(schedule) {
+  if (schedule.program_key === 'coffee.brew_only') return 'PRESS';
+  return isPlugConfigured() ? 'RESET' : 'POWER_ON';
 }
 
 // Force dynamic execution for this route (no caching)
@@ -219,12 +231,50 @@ async function handleRequest(request) {
 
           // Determine current step from marker in last_error; default = first step.
           const stepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-          const rawStep = stepMatch ? stepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
-          const step = rawStep === 'PRESS_RETRY' ? 'PRESS' : rawStep;
+          const rawStep = stepMatch ? stepMatch[1] : defaultCoffeeStep(schedule);
+          let step = rawStep === 'PRESS_RETRY' ? 'PRESS' : rawStep;
+          // A row left at RESET after the plug was unconfigured must not stall.
+          if (step === 'RESET' && !isPlugConfigured()) step = 'POWER_ON';
           console.log(`COFFEE SEQUENCE (${isBrewOnly ? 'brew_only' : 'full'}) step=${step} for ${dishwasherName}...`);
 
           // IMPORTANT: persist next-step state BEFORE the slow device call,
           // so a Netlify timeout mid-call doesn't strand the row in 'processing'.
+          if (step === 'RESET') {
+            // Force a known state: cut and restore mains so the machine is OFF,
+            // then let the next step's single Fingerbot press mean "turn on".
+            // The next step is persisted first, like every other step. If power
+            // is cut but cannot be restored, cycleCoffeePlug throws and the
+            // catch below puts the row back at RESET for a prompt retry.
+            const nextTime = new Date(Date.now() + COFFEE_RESET_SETTLE_MS).toISOString();
+            const { error: rescheduleErr } = await supabase
+              .from('schedules')
+              .update({ status: 'pending', scheduled_time: nextTime, last_error: '[COFFEE_STEP=POWER_ON]' })
+              .eq('id', schedule.id);
+            if (rescheduleErr) console.error('Coffee RESET reschedule DB error:', rescheduleErr);
+
+            const qres = await safeScheduleWebhook(webhookUrl, nextTime, { schedule_id: schedule.id, source: 'qstash' });
+            console.log(`Coffee step 0: scheduled POWER_ON at ${nextTime}. QStash:`, qres ? 'scheduled' : 'skipped');
+            await logScheduleEvent(schedule.id, 'coffee.reset.next_scheduled', {
+              next_step: 'POWER_ON',
+              next_time: nextTime,
+              qstash: qres ? 'scheduled' : 'skipped_fallback_cron',
+            });
+
+            console.log('Coffee step 0: cycling the plug to force the machine off...');
+            const outcome = await cycleCoffeePlug();
+            if (outcome.reset) {
+              await logScheduleEvent(schedule.id, 'coffee.reset.success');
+            } else {
+              // The plug never switched off, so the machine still has power:
+              // carry on as before the plug existed rather than lose the coffee.
+              console.warn('Plug reset skipped (plug unreachable):', outcome.reason);
+              await logScheduleEvent(schedule.id, 'coffee.reset.skipped', { reason: outcome.reason });
+            }
+
+            results.push({ id: schedule.id, status: 'rescheduled', step: 'POWER_ON', reset: outcome.reset });
+            continue;
+          }
+
           if (step === 'POWER_ON') {
             const nextTime = new Date(Date.now() + COFFEE_POWER_ON_DELAY_MS).toISOString();
             const { error: rescheduleErr } = await supabase
@@ -243,6 +293,10 @@ async function handleRequest(request) {
               next_time: nextTime,
               qstash: qres ? 'scheduled' : 'skipped_fallback_cron',
             });
+
+            // If a timeout cut the previous RESET step between "off" and "on",
+            // the machine has no power and this press would hit a dead machine.
+            if (isPlugConfigured()) await ensureCoffeePlugOn();
 
             console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
             await triggerFingerbot();
@@ -484,13 +538,14 @@ async function handleRequest(request) {
             // Always keep the current step marker on coffee errors — losing it
             // restarts the sequence from POWER_ON, which toggles power again.
             const currentStepMatch = schedule.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-            const isBrewOnly = schedule.program_key === 'coffee.brew_only';
-            const currentStep = currentStepMatch ? currentStepMatch[1] : (isBrewOnly ? 'PRESS' : 'POWER_ON');
+            const currentStep = currentStepMatch ? currentStepMatch[1] : defaultCoffeeStep(schedule);
             updates.last_error = `[COFFEE_STEP=${currentStep}] ${logMessage}`;
 
-            // Retry the press only when the SwitchBot API call itself failed —
-            // in that case no coffee was made, so a re-press is safe.
-            if (errorType === 'SWITCHBOT_COMMAND_FAILED') {
+            // Retry promptly only when the failed call provably did nothing:
+            // the SwitchBot API call itself failed (no coffee was made, so a
+            // re-press is safe), or the plug could not be restored (the machine
+            // has no power until it is — the RESET step is safe to repeat).
+            if (errorType === 'SWITCHBOT_COMMAND_FAILED' || errorType === 'PLUG_COMMAND_FAILED') {
               const retryTime = new Date(Date.now() + COFFEE_PRESS_RETRY_INTERVAL_MS).toISOString();
               updates.scheduled_time = retryTime;
 
