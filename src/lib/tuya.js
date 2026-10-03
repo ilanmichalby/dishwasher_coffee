@@ -142,6 +142,105 @@ async function sendDp(deviceId, dpCode, value) {
   });
 }
 
+// --- Coffee machine power plug ------------------------------------------------
+//
+// The Fingerbot "power" press is a TOGGLE and nothing reads the machine's real
+// state back, so one physical press that silently didn't land (the cloud still
+// answers success) inverts every later run: power-on switches it OFF, the brew
+// press hits a dead machine, and the power-off switches it back ON.
+//
+// The machine stays off when mains returns, so cutting and restoring power
+// forces it into a KNOWN state (off) before each full sequence. After that the
+// single Fingerbot press always means "turn on". The plug has no metering, so
+// this cannot DETECT a missed press — it stops one miss from cascading.
+//
+// Optional: with no TUYA_PLUG_DEVICE_ID everything below is skipped and the
+// sequence behaves exactly as before.
+
+export function isPlugConfigured() {
+  return Boolean(process.env.TUYA_PLUG_DEVICE_ID);
+}
+
+const plugDpCode = () => process.env.TUYA_PLUG_DP_CODE || 'switch_1';
+
+// How long mains stays cut. Long enough for the machine to drop its state.
+const PLUG_OFF_MS = Number(process.env.TUYA_PLUG_OFF_MS) > 0
+  ? Number(process.env.TUYA_PLUG_OFF_MS)
+  : 3000;
+
+async function sendPlug(value) {
+  const deviceId = process.env.TUYA_PLUG_DEVICE_ID;
+  try {
+    return await sendDp(deviceId, plugDpCode(), value);
+  } catch (err) {
+    err.errorType = 'PLUG_COMMAND_FAILED';
+    throw err;
+  }
+}
+
+/**
+ * Cuts mains to the coffee machine and restores it.
+ *
+ * Returns { reset: true } when the cycle completed, or
+ * { reset: false, reason } when the plug could not even be switched OFF — in
+ * that case nothing changed (the machine still has power), so the caller may
+ * carry on exactly as it did before the plug existed.
+ *
+ * Throws only when power was cut and could NOT be restored: the machine is
+ * dead until the plug is switched back on, so that must be retried loudly.
+ */
+export async function cycleCoffeePlug() {
+  try {
+    await sendPlug(false);
+  } catch (err) {
+    return { reset: false, reason: err?.message || String(err) };
+  }
+
+  await wait(PLUG_OFF_MS);
+
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await sendPlug(true);
+      return { reset: true };
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Plug restore attempt ${attempt} failed:`, err?.message || err);
+      await wait(1000);
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Best-effort "make sure the machine has mains". A serverless timeout landing
+ * inside the few seconds the plug is OFF would leave the machine dead with
+ * nothing to switch it back on; the power-on step calls this first. Switching
+ * an already-on plug on is a no-op, and a failure here changes nothing.
+ */
+export async function ensureCoffeePlugOn() {
+  try {
+    await sendPlug(true);
+  } catch (err) {
+    console.warn('Could not confirm the plug is on:', err?.message || err);
+  }
+}
+
+/**
+ * Plug diagnostics: whether the cloud can reach it, and its switch state.
+ */
+export async function getPlugDiagnostics() {
+  const deviceId = process.env.TUYA_PLUG_DEVICE_ID;
+  if (!deviceId) {
+    throw new Error('TUYA_PLUG_DEVICE_ID is not configured');
+  }
+  const [info, status] = await Promise.all([
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}`),
+    tuyaRequest('GET', `/v1.0/devices/${deviceId}/status`),
+  ]);
+  return { deviceId, online: info?.online, name: info?.name, status };
+}
+
 /**
  * Presses the Fingerbot once as a real momentary click: arm DOWN, hold briefly,
  * arm UP.

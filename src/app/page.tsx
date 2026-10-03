@@ -471,7 +471,8 @@ export default function SmartHomeDashboard() {
                       .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime())[0];
                     if (!upcoming) return null;
                     const m = upcoming.last_error?.match(/\[COFFEE_STEP=(\w+)\]/);
-                    const stepName = m?.[1] || 'POWER_ON';
+                    // RESET (mains cycle) is the invisible lead-in to power-on.
+                    const stepName = !m || m[1] === 'RESET' ? 'POWER_ON' : m[1];
                     if (stepName !== 'POWER_ON' && stepName !== 'PRESS' && stepName !== 'PRESS_RETRY' && stepName !== 'POWER_OFF') return null;
                     return { step: stepName as 'POWER_ON' | 'PRESS' | 'PRESS_RETRY' | 'POWER_OFF', targetTime: upcoming.scheduled_time };
                   })()}

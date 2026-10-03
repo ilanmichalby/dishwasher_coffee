@@ -692,7 +692,11 @@ TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
 GITHUB_DISPATCH_TOKEN   # גיבוי בלבד, אם טלגרם לא מוגדר
 SWITCHBOT_MIN_BATTERY   # ברירת מחדל 25
-TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1</div>
+TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1
+TUYA_PLUG_DEVICE_ID     # שקע החשמל של המכונה; בלעדיו אין איפוס
+TUYA_PLUG_OFF_MS        # ברירת מחדל 3000
+TUYA_PLUG_DP_CODE       # ברירת מחדל switch_1
+COFFEE_RESET_SETTLE_MS  # ברירת מחדל 20000</div>
     </section>
 
     <section id="flows" class="tab-panel">
@@ -712,6 +716,7 @@ TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1</div>
         <article class="card">
           <h2>תזמון קפה מלא</h2>
           <div class="timeline">
+            <div class="timeline-item"><span class="timeline-marker"></span><div><strong>RESET</strong><p class="muted">אם מוגדר TUYA_PLUG_DEVICE_ID: השקע החכם חותך את החשמל למכונה ל-3 שניות ומחזיר, כדי שהיא תמיד תתחיל כבויה. אחרי COFFEE_RESET_SETTLE_MS (20 שנ׳) ממשיכים להדלקה. אם השקע לא מגיב, השלב מדולג והרצף ממשיך כרגיל.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>POWER_ON</strong><p class="muted">Tuya Fingerbot לוחץ על כפתור ההדלקה, ואז התזמון מוזז דקה קדימה.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>PRESS x1</strong><p class="muted">SwitchBot לוחץ פעם אחת בלבד על כפתור הכנת הקפה. ניסיון חוזר מתוזמן (לפי COFFEE_PRESS_INTERVAL_MS) רק אם קריאת ה-API של SwitchBot עצמה נכשלה — כל לחיצה מיותרת היא כוס קפה מיותרת.</p></div></div>
             <div class="timeline-item"><span class="timeline-marker"></span><div><strong>SwitchBot validation</strong><p class="muted">כל פקודת SwitchBot חייבת להחזיר statusCode=100. אם לא, אותו ניסיון מתוזמן שוב ולא נספר כהתקדמות.</p></div></div>
@@ -796,6 +801,9 @@ TUYA_FINGERBOT_DP_CODE  # ברירת מחדל switch_1</div>
         </p>
         <div class="tag-row">
           <span class="tag">schedule.processing</span>
+          <span class="tag">coffee.reset.next_scheduled</span>
+          <span class="tag">coffee.reset.success</span>
+          <span class="tag">coffee.reset.skipped</span>
           <span class="tag">coffee.power_on.next_scheduled</span>
           <span class="tag">coffee.power_on.success</span>
           <span class="tag">coffee.press_retry.next_scheduled</span>

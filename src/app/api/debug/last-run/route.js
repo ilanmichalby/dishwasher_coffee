@@ -48,6 +48,9 @@ function verdict(schedule, events) {
     if (has('coffee.power_on.success') && !has('coffee.press.success')) {
       return 'המכונה נדלקה אבל שלב הלחיצה לא רץ/נכשל — נדלקה בלי קפה.';
     }
+    if (has('coffee.reset.next_scheduled') && !has('coffee.reset.success') && !has('coffee.reset.skipped')) {
+      return 'איפוס החשמל בשקע לא הושלם — ייתכן שהמכונה נשארה בלי חשמל. בדקו את השקע ב-/api/debug/plug.';
+    }
     if (!has('coffee.power_on.success')) {
       return 'שלב ההדלקה לא הצליח — בדקו את ה-Fingerbot ב-/api/debug/fingerbot.';
     }
