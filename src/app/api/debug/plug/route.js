@@ -7,8 +7,9 @@ import { getTuyaDevices, getPlugDiagnostics, cycleCoffeePlug, isPlugConfigured }
 // coffee machine's power off for a few seconds — run it only when you are
 // standing next to it, to see that it stays off when power returns.
 //
-// Without TUYA_PLUG_DEVICE_ID set it lists every device on the Tuya project
-// (id, name, online) so you can copy the plug's id into that env var.
+// Without TUYA_PLUG_DEVICE_ID set — or with &list=1 — it lists every device on
+// the Tuya project (id, name, online), so you can copy the plug's id into that
+// env var, or spot a stale duplicate left behind by re-pairing.
 //
 // Gated behind CRON_SECRET. No secrets are returned.
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export async function GET(request) {
   try {
     const body = { plug_configured: isPlugConfigured() };
 
-    if (!isPlugConfigured()) {
+    if (!isPlugConfigured() || url.searchParams.get('list') === '1') {
       const result = await getTuyaDevices();
       const list = Array.isArray(result) ? result : (result?.devices || []);
       body.devices = list.map((d) => ({
@@ -37,6 +38,9 @@ export async function GET(request) {
         category: d.category,
         online: d.online,
       }));
+    }
+
+    if (!isPlugConfigured()) {
       body.hint = 'Find the Wifi Plug in "devices" and set its id as TUYA_PLUG_DEVICE_ID in the environment, then reload this page.';
       return NextResponse.json(body);
     }
