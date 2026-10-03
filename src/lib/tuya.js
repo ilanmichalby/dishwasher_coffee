@@ -182,14 +182,28 @@ async function sendPlug(value) {
  * Cuts mains to the coffee machine and restores it.
  *
  * Returns { reset: true } when the cycle completed, or
- * { reset: false, reason } when the plug could not even be switched OFF — in
- * that case nothing changed (the machine still has power), so the caller may
- * carry on exactly as it did before the plug existed.
+ * { reset: false, reason } when the plug was not touched — it is offline to the
+ * cloud, or could not even be switched OFF. Nothing changed (the machine still
+ * has power), so the caller may carry on exactly as it did before the plug
+ * existed.
+ *
+ * Why the offline check comes first: Tuya's command API answers "success" for a
+ * device it cannot reach, and the command is simply lost. Trusting that would
+ * log a mains reset that never happened — or cut power and lose the restore.
  *
  * Throws only when power was cut and could NOT be restored: the machine is
  * dead until the plug is switched back on, so that must be retried loudly.
  */
 export async function cycleCoffeePlug() {
+  try {
+    const info = await tuyaRequest('GET', `/v1.0/devices/${process.env.TUYA_PLUG_DEVICE_ID}`);
+    if (info?.online !== true) {
+      return { reset: false, reason: 'the plug is offline to the Tuya cloud' };
+    }
+  } catch (err) {
+    return { reset: false, reason: `could not confirm the plug is online: ${err?.message || err}` };
+  }
+
   try {
     await sendPlug(false);
   } catch (err) {
