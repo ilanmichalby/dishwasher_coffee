@@ -126,7 +126,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // How long the arm stays pressed down before releasing (a real "click").
 const FINGERBOT_SUSTAIN_MS = Number(process.env.TUYA_FINGERBOT_SUSTAIN_MS) > 0
   ? Number(process.env.TUYA_FINGERBOT_SUSTAIN_MS)
-  : 2000;
+  : 800;
 
 /**
  * Reads a single DP value from the device's current status.
