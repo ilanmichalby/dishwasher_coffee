@@ -42,7 +42,7 @@ const DISHWASHER_RETRY_BUDGET = envNumber('DISHWASHER_MAX_RETRIES', DISHWASHER_M
 const COFFEE_POWER_ON_DELAY_MS = envNumber('COFFEE_POWER_ON_DELAY_MS', 120000);
 // Gap between restoring mains (the plug reset) and the Fingerbot power press,
 // so the machine has booted into standby before it is clicked.
-const COFFEE_RESET_SETTLE_MS = envNumber('COFFEE_RESET_SETTLE_MS', 20000);
+const COFFEE_RESET_SETTLE_MS = envNumber('COFFEE_RESET_SETTLE_MS', 60000);
 const REMOTE_START_WAIT_MS = envNumber('REMOTE_START_WAIT_MS', 45000);
 const REMOTE_START_MAX_WAITS = envNumber('REMOTE_START_MAX_WAITS', 20);
 const NO_PROGRAMS_WAIT_MS = envNumber('NO_PROGRAMS_WAIT_MS', 30000);
