@@ -305,8 +305,11 @@ export async function triggerFingerbot(trace = null) {
     console.warn('Could not read Fingerbot arm position; pressing blind:', err?.message || err);
   }
 
-  const forcedMode = process.env.TUYA_FINGERBOT_MODE || null;
-  if ((forcedMode || mode) === 'click') {
+  // The cloud status of this Fingerbot does not expose `mode`, and it is set
+  // to Click in the app, so Click is the default. Override with
+  // TUYA_FINGERBOT_MODE=switch if the device is ever switched to Switch mode.
+  const effectiveMode = process.env.TUYA_FINGERBOT_MODE || mode || 'click';
+  if (effectiveMode === 'click') {
     const result = await sendDp(deviceId, dpCode, true);
     note({ op: 'send', value: true, why: 'click_mode_single_press' });
     return result;
