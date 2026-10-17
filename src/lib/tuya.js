@@ -287,15 +287,29 @@ export async function triggerFingerbot(trace = null) {
 
   const dpCode = process.env.TUYA_FINGERBOT_DP_CODE || 'switch_1';
 
-  // 1. The arm must start UP, or the press below changes nothing.
+  // 1. Read the device once: its arm position and, on Fingerbots that have it,
+  // the operating `mode`. In "click" mode the device performs the whole click
+  // by itself on a single `true`, and ANY further command (the raise or release
+  // below) can land after that click finished and fire a SECOND click — an
+  // on+off in one go. So in click mode we send exactly one `true` and nothing else.
   let armDown = null;
+  let mode = null;
   try {
-    const initial = await readDpValue(deviceId, dpCode);
+    const status = (await tuyaRequest('GET', `/v1.0/devices/${deviceId}/status`)) || [];
+    const initial = status.find((s) => s.code === dpCode)?.value;
+    mode = status.find((s) => s.code === 'mode')?.value ?? null;
     armDown = initial === true;
-    note({ op: 'read_initial', value: initial ?? null });
+    note({ op: 'read_initial', value: initial ?? null, mode });
   } catch (err) {
     note({ op: 'read_initial', error: err?.message || String(err) });
     console.warn('Could not read Fingerbot arm position; pressing blind:', err?.message || err);
+  }
+
+  const forcedMode = process.env.TUYA_FINGERBOT_MODE || null;
+  if ((forcedMode || mode) === 'click') {
+    const result = await sendDp(deviceId, dpCode, true);
+    note({ op: 'send', value: true, why: 'click_mode_single_press' });
+    return result;
   }
 
   if (armDown) {
