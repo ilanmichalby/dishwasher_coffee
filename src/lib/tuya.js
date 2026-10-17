@@ -272,7 +272,13 @@ export async function getPlugDiagnostics() {
  * The DP code defaults to `switch_1`; override with TUYA_FINGERBOT_DP_CODE if the
  * device exposes a different code (run scratch/list_tuya_fingerbot.mjs to check).
  */
-export async function triggerFingerbot() {
+export async function triggerFingerbot(trace = null) {
+  // Optional diagnostics: when the caller passes an array, every command and
+  // arm-position read is appended with its time offset (ms) from the call start,
+  // so a "pressed twice / not at all" question can be answered from the log.
+  const t0 = Date.now();
+  const note = (entry) => { if (trace) trace.push({ ms: Date.now() - t0, ...entry }); };
+
   const deviceId = process.env.TUYA_FINGERBOT_DEVICE_ID;
 
   if (!deviceId) {
@@ -284,19 +290,35 @@ export async function triggerFingerbot() {
   // 1. The arm must start UP, or the press below changes nothing.
   let armDown = null;
   try {
-    armDown = await readDpValue(deviceId, dpCode) === true;
+    const initial = await readDpValue(deviceId, dpCode);
+    armDown = initial === true;
+    note({ op: 'read_initial', value: initial ?? null });
   } catch (err) {
+    note({ op: 'read_initial', error: err?.message || String(err) });
     console.warn('Could not read Fingerbot arm position; pressing blind:', err?.message || err);
   }
 
   if (armDown) {
     console.warn('Fingerbot arm was parked DOWN — raising it before the press.');
     await sendDp(deviceId, dpCode, false);
+    note({ op: 'send', value: false, why: 'raise_parked_arm' });
     await wait(FINGERBOT_SUSTAIN_MS);
   }
 
   // 2. Arm DOWN — the actual press. If this fails, no press happened: surface it.
-  const result = await sendDp(deviceId, dpCode, true);
+  let result;
+  try {
+    result = await sendDp(deviceId, dpCode, true);
+    note({ op: 'send', value: true, why: 'press' });
+  } catch (err) {
+    note({ op: 'send', value: true, why: 'press', error: err?.message || String(err) });
+    throw err;
+  }
+  try {
+    note({ op: 'read_while_down', value: (await readDpValue(deviceId, dpCode)) ?? null });
+  } catch (err) {
+    note({ op: 'read_while_down', error: err?.message || String(err) });
+  }
 
   // 3. Hold, then arm UP. A failed release leaves the arm down and turns every
   // FUTURE press into a no-op, so it is worth retrying and verifying.
@@ -305,11 +327,15 @@ export async function triggerFingerbot() {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await sendDp(deviceId, dpCode, false);
+      note({ op: 'send', value: false, why: 'release', attempt });
       await wait(300);
-      const stillDown = await readDpValue(deviceId, dpCode) === true;
+      const after = await readDpValue(deviceId, dpCode);
+      note({ op: 'read_after_release', value: after ?? null, attempt });
+      const stillDown = after === true;
       if (!stillDown) return result;
       console.warn(`Fingerbot still reports the arm DOWN after release attempt ${attempt}.`);
     } catch (err) {
+      note({ op: 'release_error', attempt, error: err?.message || String(err) });
       console.warn(`Fingerbot arm-up (release) attempt ${attempt} failed:`, err?.message || err);
     }
     await wait(500);

@@ -73,6 +73,17 @@ async function safeScheduleWebhook(url, timeIso, body) {
   }
 }
 
+// Fingerbot press with a per-command trace written to schedule_events
+// (visible in /api/debug/last-run), including when the press throws.
+async function triggerFingerbotLogged(scheduleId, step) {
+  const trace = [];
+  try {
+    return await triggerFingerbot(trace);
+  } finally {
+    await logScheduleEvent(scheduleId, 'coffee.fingerbot.trace', { step, trace });
+  }
+}
+
 // First step of a coffee row that has no step marker yet. A full sequence opens
 // with a mains reset when the plug is configured, so the Fingerbot's toggle
 // always starts from a machine that is known to be off; brew_only never touches
@@ -299,7 +310,7 @@ async function handleRequest(request) {
             if (isPlugConfigured()) await ensureCoffeePlugOn();
 
             console.log('Coffee step 1: Power ON via Tuya Fingerbot...');
-            await triggerFingerbot();
+            await triggerFingerbotLogged(schedule.id, 'power_on');
             await logScheduleEvent(schedule.id, 'coffee.power_on.success');
 
             results.push({ id: schedule.id, status: 'rescheduled', step: 'PRESS' });
@@ -345,7 +356,7 @@ async function handleRequest(request) {
           } else if (step === 'POWER_OFF') {
             // 3. Power OFF via Tuya Fingerbot
             console.log('Coffee step 3: Power OFF via Tuya Fingerbot...');
-            await triggerFingerbot();
+            await triggerFingerbotLogged(schedule.id, 'power_off');
             await logScheduleEvent(schedule.id, 'coffee.power_off.success');
             // fall through to mark completed
           }
