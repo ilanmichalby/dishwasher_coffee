@@ -113,7 +113,7 @@ export async function GET(request) {
       (bySchedule[e.schedule_id] ||= []).push(e);
     }
 
-    const report = (schedules || []).map((s) => {
+    let report = (schedules || []).map((s) => {
       const evts = bySchedule[s.id] || [];
       return {
         id: s.id,
@@ -131,6 +131,11 @@ export async function GET(request) {
         })),
       };
     });
+
+    // &limit=N keeps only the newest N schedules, newest first, so the run you
+    // just made is at the top and survives copy/paste from a phone.
+    const limit = Math.floor(Number(url.searchParams.get('limit')));
+    if (limit > 0) report = report.slice(-limit).reverse();
 
     return NextResponse.json({
       window_days: days,
