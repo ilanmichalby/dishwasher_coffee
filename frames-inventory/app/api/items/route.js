@@ -1,5 +1,5 @@
 const API = "https://api.airtable.com/v0";
-const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, NAME_FIELD = "שם", QTY_FIELD = "כמות", ACCESS_CODE } = process.env;
+const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, NAME_FIELD, QTY_FIELD = "מלאי", ACCESS_CODE } = process.env;
 
 function authorized(request) {
   return !ACCESS_CODE || request.headers.get("x-access-code") === ACCESS_CODE;
@@ -15,18 +15,26 @@ async function airtable(path, init = {}) {
   return res.json();
 }
 
+// Without NAME_FIELD, label each row with its first text value.
+function displayName(fields) {
+  if (NAME_FIELD) return fields[NAME_FIELD] ?? "";
+  return Object.entries(fields).find(([k, v]) => k !== QTY_FIELD && typeof v === "string")?.[1] ?? "";
+}
+
 export async function GET(request) {
   if (!authorized(request)) return Response.json({ error: "unauthorized" }, { status: 401 });
   const items = [];
   let offset;
   do {
     const params = new URLSearchParams();
-    params.append("fields[]", NAME_FIELD);
-    params.append("fields[]", QTY_FIELD);
+    if (NAME_FIELD) {
+      params.append("fields[]", NAME_FIELD);
+      params.append("fields[]", QTY_FIELD);
+    }
     if (offset) params.set("offset", offset);
     const data = await airtable(`?${params}`);
     for (const r of data.records) {
-      items.push({ id: r.id, name: r.fields[NAME_FIELD] ?? "", qty: r.fields[QTY_FIELD] ?? 0 });
+      items.push({ id: r.id, name: displayName(r.fields), qty: r.fields[QTY_FIELD] ?? 0 });
     }
     offset = data.offset;
   } while (offset);
