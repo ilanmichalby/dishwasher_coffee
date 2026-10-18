@@ -16,9 +16,24 @@ async function airtable(path, init = {}) {
   return res.json();
 }
 
-// Without NAME_FIELD, label each row with its first text value.
-function displayName(fields) {
-  if (NAME_FIELD) return fields[NAME_FIELD] ?? "";
+// The row label is NAME_FIELD, else the table's primary field (needs the schema.bases:read scope).
+let nameField = NAME_FIELD;
+async function resolveNameField() {
+  if (nameField) return nameField;
+  const res = await fetch(`${API}/meta/bases/${AIRTABLE_BASE_ID}/tables`, {
+    headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const { tables } = await res.json();
+  const table = tables.find((t) => t.id === AIRTABLE_TABLE_ID || t.name === AIRTABLE_TABLE_ID);
+  nameField = table?.fields.find((f) => f.id === table.primaryFieldId)?.name ?? null;
+  return nameField;
+}
+
+// Fallback when the primary field is unknown: the row's first text value.
+function displayName(fields, name) {
+  if (name) return fields[name] ?? "";
   return Object.entries(fields).find(([k, v]) => !FIELDS.includes(k) && typeof v === "string")?.[1] ?? "";
 }
 
@@ -26,15 +41,16 @@ const pick = (fields) => Object.fromEntries(FIELDS.map((f) => [f, fields[f] ?? 0
 
 export async function GET(request) {
   if (!authorized(request)) return Response.json({ error: "unauthorized" }, { status: 401 });
+  const name = await resolveNameField();
   const items = [];
   let offset;
   do {
     const params = new URLSearchParams();
-    if (NAME_FIELD) for (const f of [NAME_FIELD, ...FIELDS]) params.append("fields[]", f);
+    if (name) for (const f of [name, ...FIELDS]) params.append("fields[]", f);
     if (offset) params.set("offset", offset);
     const data = await airtable(`?${params}`);
     for (const r of data.records) {
-      items.push({ id: r.id, name: displayName(r.fields), values: pick(r.fields) });
+      items.push({ id: r.id, name: displayName(r.fields, name), values: pick(r.fields) });
     }
     offset = data.offset;
   } while (offset);
