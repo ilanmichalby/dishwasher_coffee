@@ -7,6 +7,7 @@ const btn = { width: 48, height: 48, fontSize: 24, borderRadius: 12, border: "1p
 
 export default function Page() {
   const [code, setCode] = useState("");
+  const [fields, setFields] = useState([]);
   const [items, setItems] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [query, setQuery] = useState("");
@@ -18,6 +19,7 @@ export default function Page() {
     if (res.status === 401) { setItems(null); setStatus("קוד שגוי"); return; }
     if (!res.ok) { setStatus("שגיאה בטעינה"); return; }
     const data = await res.json();
+    setFields(data.fields);
     setItems(data.items);
     setDrafts({});
     setStatus("");
@@ -32,18 +34,18 @@ export default function Page() {
   }, []);
 
   async function save(item) {
-    const qty = drafts[item.id];
+    const values = drafts[item.id];
     setStatus(`שומר את ${item.name}…`);
     const res = await fetch("/api/items", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-access-code": code },
-      body: JSON.stringify({ id: item.id, qty }),
+      body: JSON.stringify({ id: item.id, values }),
     });
     if (!res.ok) { setStatus("השמירה נכשלה"); return; }
     const saved = await res.json();
-    setItems((list) => list.map((i) => (i.id === saved.id ? { ...i, qty: saved.qty } : i)));
+    setItems((list) => list.map((i) => (i.id === saved.id ? { ...i, values: saved.values } : i)));
     setDrafts(({ [item.id]: _, ...rest }) => rest);
-    setStatus(`✓ נשמר: ${item.name} = ${saved.qty}`);
+    setStatus(`✓ נשמר: ${item.name}`);
   }
 
   if (!items) {
@@ -69,23 +71,29 @@ export default function Page() {
         style={{ width: "100%", boxSizing: "border-box", fontSize: 18, padding: 12, borderRadius: 12, border: "1px solid #d6d3d1", marginBottom: 12 }} />
       {status && <p style={{ position: "sticky", top: 0, background: "#fef3c7", padding: 8, borderRadius: 8 }}>{status}</p>}
       {shown.map((item) => {
-        const value = drafts[item.id] ?? item.qty;
-        const dirty = item.id in drafts && drafts[item.id] !== item.qty;
-        const set = (v) => setDrafts((d) => ({ ...d, [item.id]: Math.max(0, v) }));
+        const draft = drafts[item.id] ?? {};
+        const dirty = Object.entries(draft).some(([f, v]) => v !== item.values[f]);
         return (
           <div key={item.id} style={card}>
             <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>{item.name || "(ללא שם)"}</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button style={btn} onClick={() => set(value + 1)}>+</button>
-              <input type="number" inputMode="numeric" min="0" value={value}
-                onChange={(e) => set(Number(e.target.value) || 0)}
-                style={{ width: 72, height: 48, fontSize: 22, textAlign: "center", borderRadius: 12, border: "1px solid #d6d3d1" }} />
-              <button style={btn} onClick={() => set(value - 1)}>−</button>
-              <button disabled={!dirty} onClick={() => save(item)}
-                style={{ ...btn, flex: 1, fontSize: 18, background: dirty ? "#16a34a" : "#e7e5e4", color: dirty ? "#fff" : "#78716c", border: "none" }}>
-                שמירה
-              </button>
-            </div>
+            {fields.map((f) => {
+              const value = draft[f] ?? item.values[f];
+              const set = (v) => setDrafts((d) => ({ ...d, [item.id]: { ...d[item.id], [f]: Math.max(0, v) } }));
+              return (
+                <div key={f} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ width: 64, fontSize: 16, color: "#57534e" }}>{f}</span>
+                  <button style={btn} onClick={() => set(value + 1)}>+</button>
+                  <input type="number" inputMode="numeric" min="0" value={value}
+                    onChange={(e) => set(Number(e.target.value) || 0)}
+                    style={{ width: 72, height: 48, fontSize: 22, textAlign: "center", borderRadius: 12, border: "1px solid #d6d3d1" }} />
+                  <button style={btn} onClick={() => set(value - 1)}>−</button>
+                </div>
+              );
+            })}
+            <button disabled={!dirty} onClick={() => save(item)}
+              style={{ ...btn, width: "100%", fontSize: 18, background: dirty ? "#16a34a" : "#e7e5e4", color: dirty ? "#fff" : "#78716c", border: "none" }}>
+              שמירה
+            </button>
           </div>
         );
       })}
