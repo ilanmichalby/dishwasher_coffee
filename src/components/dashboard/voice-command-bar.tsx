@@ -5,6 +5,7 @@ import { Mic, Sparkles, Check, Trash2, Calendar, Clock, Loader2, AlertCircle, In
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseText } from "@/lib/nlpParser";
+import { israelToISO } from "@/lib/israel-time";
 
 interface VoiceCommandBarProps {
   onScheduleSuccess: () => void;
@@ -200,12 +201,11 @@ export function VoiceCommandBar({ onScheduleSuccess }: VoiceCommandBarProps) {
     setErrorMessage(null);
 
     try {
-      const scheduledTimeStr = `${parsedResult.date}T${parsedResult.time}:00`;
       const response = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scheduled_time: new Date(scheduledTimeStr).toISOString(),
+          scheduled_time: israelToISO(parsedResult.date, parsedResult.time),
           program_key: parsedResult.program.key,
           appliance_id: parsedResult.device.id,
         }),

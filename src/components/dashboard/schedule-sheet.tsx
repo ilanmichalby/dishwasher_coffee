@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { isoToIsrael, israelDate } from "@/lib/israel-time"
 import {
   Select,
   SelectContent,
@@ -63,9 +64,9 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
   useEffect(() => {
     if (editingSchedule) {
       if (editingSchedule.rawDate) {
-        setDate(editingSchedule.rawDate.split('T')[0]);
-        const d = new Date(editingSchedule.rawDate);
-        setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+        const il = isoToIsrael(editingSchedule.rawDate);
+        setDate(il.date);
+        setTime(il.time);
       }
       if (editingSchedule.program_key?.startsWith('coffee.')) {
         setCoffeeMode(editingSchedule.program_key === 'coffee.brew_only' ? 'brew_only' : 'full');
@@ -167,21 +168,14 @@ export function ScheduleSheet({ open, onOpenChange, appliance, onAddSchedule, ed
               <Button
                 variant="outline"
                 className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
-                onClick={() => {
-                  const d = new Date();
-                  setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-                }}
+                onClick={() => setDate(israelDate(0))}
               >
                 היום
               </Button>
               <Button
                 variant="outline"
                 className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
-                onClick={() => {
-                  const d = new Date();
-                  d.setDate(d.getDate() + 1);
-                  setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-                }}
+                onClick={() => setDate(israelDate(1))}
               >
                 מחר
               </Button>

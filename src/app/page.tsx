@@ -18,6 +18,7 @@ import { CheckAndPrint } from "@/components/dashboard/check-and-print";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Power } from 'lucide-react';
 import { VoiceCommandBar } from "@/components/dashboard/voice-command-bar";
+import { israelToISO } from "@/lib/israel-time";
 
 export interface Appliance {
   haId: string;
@@ -165,7 +166,7 @@ export default function SmartHomeDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          scheduled_time: new Date(`${scheduleData.date}T${scheduleData.time}:00`).toISOString(),
+          scheduled_time: israelToISO(scheduleData.date, scheduleData.time),
           program_key: scheduleData.program,
           appliance_id: selectedAppliance.haId
         })
@@ -209,7 +210,7 @@ export default function SmartHomeDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id,
-          scheduled_time: new Date(`${scheduleData.date}T${scheduleData.time}:00`).toISOString(),
+          scheduled_time: israelToISO(scheduleData.date, scheduleData.time),
           program_key: scheduleData.program
         })
       });

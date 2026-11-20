@@ -96,7 +96,10 @@ export function parseText(text, coffeeMode) {
   }
 
   // 3. Date Parsing
-  const today = new Date();
+  // A Date whose local fields read as Israel wall-clock time, so "today",
+  // "tomorrow", weekdays and the past-time rollover follow Israel even when
+  // the device is in another time zone.
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
   let targetDate = new Date(today);
 
   if (text.includes('היום') || text.includes('הערב היום') || text.includes('הלילה היום')) {
