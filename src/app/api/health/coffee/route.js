@@ -30,6 +30,17 @@ const MIN_BOT_BATTERY = Number(process.env.SWITCHBOT_MIN_BATTERY) > 0
   ? Number(process.env.SWITCHBOT_MIN_BATTERY)
   : 25;
 
+// Tuya's IoT Core trial lapses (it ended 2026-11-20 and silently killed every
+// Fingerbot/plug command that Shabbat: code 28841002). The cloud API does not
+// expose the expiry date, so (a) an expiry error from any Tuya call is reported
+// as exactly that, and (b) if TUYA_SUBSCRIPTION_EXPIRES (YYYY-MM-DD, from
+// iot.tuya.com -> Cloud -> IoT Core -> My Subscriptions) is set, warn ahead of
+// time instead of after.
+const SUBSCRIPTION_ERROR_RE = /28841002|subscription has expired/i;
+const SUBSCRIPTION_WARN_DAYS = Number(process.env.TUYA_SUBSCRIPTION_WARN_DAYS) > 0
+  ? Number(process.env.TUYA_SUBSCRIPTION_WARN_DAYS)
+  : 21;
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
@@ -106,6 +117,20 @@ export async function GET(request) {
   }
   const plugBad = plugConfigured && plugOnline !== true;
 
+  // Tuya subscription: expired (seen in an error) or about to expire (env date).
+  const subscriptionExpiredError = [deviceError, plugError].some(
+    (m) => m && SUBSCRIPTION_ERROR_RE.test(m)
+  );
+  const expiresRaw = process.env.TUYA_SUBSCRIPTION_EXPIRES;
+  const expiresAt = expiresRaw ? new Date(`${expiresRaw}T23:59:59+02:00`) : null;
+  const subscriptionDaysLeft = expiresAt && !Number.isNaN(expiresAt.getTime())
+    ? Math.floor((expiresAt.getTime() - now.getTime()) / 86400000)
+    : null;
+  const subscriptionExpired = subscriptionExpiredError
+    || (subscriptionDaysLeft != null && subscriptionDaysLeft < 0);
+  const subscriptionExpiring = !subscriptionExpired
+    && subscriptionDaysLeft != null && subscriptionDaysLeft <= SUBSCRIPTION_WARN_DAYS;
+
   const botBatteryLow = bot?.battery != null && bot.battery < MIN_BOT_BATTERY;
   // switchMode makes the arm hold a position instead of clicking — the command
   // succeeds and nothing gets brewed.
@@ -114,7 +139,10 @@ export async function GET(request) {
   // Only worth an alert when a coffee is coming AND something on the path from
   // the cloud to the button is not confirmably in order. If nothing is
   // scheduled, an offline gateway isn't urgent yet.
-  const healthy = !needsCoffee || (online === true && !plugBad && !botBatteryLow && !botWrongMode && !botError);
+  // An expired/expiring subscription alerts even with nothing scheduled: it
+  // breaks every future run, and Friday is the cheapest day to find out.
+  const healthy = !subscriptionExpired && !subscriptionExpiring
+    && (!needsCoffee || (online === true && !plugBad && !botBatteryLow && !botWrongMode && !botError));
 
   const body = {
     healthy,
@@ -125,6 +153,8 @@ export async function GET(request) {
     plug_configured: plugConfigured,
     plug_online: plugOnline,
     plug_error: plugError,
+    tuya_subscription_expired: subscriptionExpired,
+    tuya_subscription_days_left: subscriptionDaysLeft,
     switchbot: bot,
     switchbot_error: botError,
     switchbot_battery_low: botBatteryLow,
@@ -132,7 +162,11 @@ export async function GET(request) {
     upcoming_coffee_count: upcomingCoffee.length,
     next_coffee: upcomingCoffee[0]?.scheduled_time || null,
     checked_at: now.toISOString(),
-    message: healthy
+    message: subscriptionExpired
+      ? 'The Tuya IoT Core subscription has EXPIRED (code 28841002) — every Fingerbot/plug command will fail and no coffee will run. Renew it at iot.tuya.com → Cloud → IoT Core → My Subscriptions → Extend Trial Period, BEFORE Shabbat.'
+      : subscriptionExpiring
+      ? `The Tuya IoT Core subscription expires in ${subscriptionDaysLeft} day(s) (${expiresRaw}). Extend it at iot.tuya.com → Cloud → IoT Core → Extend Trial Period, then update TUYA_SUBSCRIPTION_EXPIRES.`
+      : healthy
       ? (needsCoffee
           ? 'Coffee scheduled, Fingerbot online and the SwitchBot can press — good to go.'
           : 'No coffee scheduled in the next 72h — nothing to check.')
